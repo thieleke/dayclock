@@ -43,6 +43,5 @@ Suggestions:
 * MHZ-19B is pretty touchy - read https://github.com/WifWaf/MH-Z19/blob/master/README.md for the details. 
 * Superglue phreakmonkey's dayclock print to the niq_ro's 1602a stand print to make a nice integrated unit.  Then stick down the DHT and MHZ-19B to the breadboard.  There are some nice 3D prints on Thingiverse for the DHT models - I like https://www.thingiverse.com/make:679955 which, scaled up, also works well for the MHZ-19B sensor.
 
-* 
 
 
