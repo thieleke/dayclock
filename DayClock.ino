@@ -37,25 +37,26 @@ const int dayPos[8] = {180, 159, 133, 107, 80,  51,  26,  0};
 #define LCD_I2C_ADDRESS 0x27
 #define LCD_COLUMNS 16
 #define LCD_ROWS 2
-/* Constants that you'll definitely want to update */
+/* End of constants that you'll definitely want to update */
 
 
 #include <Arduino.h>
-#include <Adafruit_Sensor.h>
-#include <AsyncUDP.h>
-#include <DHT.h>
+#include <Adafruit_Sensor.h>   // https://github.com/adafruit/Adafruit_Sensor/archive/master.zip
+#include <AsyncTCP.h>          // https://github.com/me-no-dev/AsyncTCP/archive/master.zip
+#include <AsyncUDP.h>          // https://github.com/espressif/arduino-esp32/archive/master.zip
+#include <DHT.h>               // https://github.com/adafruit/DHT-sensor-library/archive/master.zip
 #include <DHT_U.h>
-#include <ESP32Servo.h>
-#include <LiquidCrystal_I2C.h>
-#include <MHZ19.h>
+#include <ESPAsyncWebServer.h> // https://github.com/me-no-dev/ESPAsyncWebServer/archive/master.zip
+#include <ESP32Servo.h>        // https://github.com/jkb-git/ESP32Servo/archive/master.zip
+#include <LiquidCrystal_I2C.h> // https://github.com/fdebrabander/Arduino-LiquidCrystal-I2C-library/archive/master.zip
+#include <MHZ19.h>             // https://github.com/WifWaf/MH-Z19/archive/master.zip
 #include <time.h>
 #include <WiFi.h>
-#include <WebServer.h>
-#include <Wire.h> 
+#include <Wire.h>
 
 unsigned long ntpUpdated = 0;
 char localTimeBuffer[30];
-WebServer webServer(80);
+AsyncWebServer webServer(80);
 AsyncUDP udp;
 Servo servo;
 LiquidCrystal_I2C lcd(LCD_I2C_ADDRESS, LCD_COLUMNS, LCD_ROWS);  // Defaults to I2C address 0x27 and 16x2 display
@@ -209,10 +210,9 @@ void setup() {
   udp = NULL;
   #endif
   
-  webServer.on("/", httpRootHandler);
-  webServer.on("/xml", httpXMLHandler);
-  webServer.on("/json", httpJSONHandler);
-  webServer.enableCORS(true);
+  webServer.on("/",     HTTP_GET, httpRootHandler);
+  webServer.on("/xml",  HTTP_GET, httpXMLHandler);
+  webServer.on("/json", HTTP_GET, httpJSONHandler);
   webServer.begin();
 
   lcd.setCursor(0, 0);
@@ -222,7 +222,6 @@ void setup() {
 void loop() 
 {  
   unsigned long ticks = millis();
-  webServer.handleClient();
 
   if((unsigned long)(ticks - sensorDelayTicks) >= delayMS)
   {
@@ -243,8 +242,6 @@ void loop()
   {
     updateNTP();
   }
-
-  webServer.handleClient();
 
   delay(100);
 } 
@@ -424,6 +421,8 @@ void print_sensors()
     
     loops = 0;
   }
+
+  Serial.println("print_sensors() complete [" + String(millis()) + "]");
 }
 
 void move_pointer(int wday, int hour)
@@ -445,6 +444,8 @@ void move_pointer(int wday, int hour)
   int pos = int(left - (hour * divsPerHour));
   Serial.println(("    " + String(localTime()) + ": Hour = " + String(hour) + " -> Pos = " + String(pos) + " [" + String(left) + " , " + String(right) + "]").c_str());
   servo.write(pos);
+
+  Serial.println("move_pointer() complete [" + String(millis()) + "]");
 }
 
 void updateNTP()
@@ -484,11 +485,11 @@ void to_json(float temperature, float humidity, int co2, int lastSensorTimestamp
   snprintf(buf, len - 1, "{\"temp_f\": %0.2f, \"temp_c\": %0.2f, \"humidity\": %0.2f, \"co2\": %d, \"timestamp\": %d, \"millis\": %d, \"timestamp_str\": \"%s\"}", c_to_f(temperature), temperature, humidity, co2, lastSensorTimestamp, millis(), lastSensorLocaltime); 
 }
 
-void httpRootHandler()
+void httpRootHandler(AsyncWebServerRequest *request)
 {
-  Serial.println("HTTP request: root");
-
-   const char *html = R"(
+  Serial.println("HTTP request from " + request->client()->remoteIP().toString() + ": / [" + String(millis()) + "]");
+   
+  const char *html = R"(
 <html>
    <head>
         <meta charset='UTF-8'>
@@ -549,31 +550,42 @@ void httpRootHandler()
 
   char buf[4096];
   snprintf(buf, sizeof(buf) - 1, html, temp_css, c_to_f(lastTemperature), lastTemperature, lastHumidity, lastCO2, lastSensorLocaltime);
-  webServer.send(200, "text/html", buf);
   
-  Serial.println("HTTP request complete: root");
+  AsyncWebServerResponse *response = request->beginResponse(200, "text/html", buf);
+  response->addHeader("Cache-Control", "no-cache");
+  request->send(response);
+  
+  Serial.println("HTTP request complete: / [" + String(millis()) + "]");
 }
 
-void httpXMLHandler()
+void httpXMLHandler(AsyncWebServerRequest *request)
 {
-  Serial.println("HTTP request: xml");
+  Serial.println("HTTP request from " + request->client()->remoteIP().toString() + ": /xml [" + String(millis()) + "]");
 
   char buf[1024];
   to_xml(lastTemperature, lastHumidity, lastCO2, lastSensorTimestamp, buf, sizeof(buf));
-  webServer.send(200, "text/xml", buf);
 
-  Serial.println("HTTP request complete: xml");
+  AsyncWebServerResponse *response = request->beginResponse(200, "application/xml", buf);
+  response->addHeader("Access-Control-Allow-Origin", "*");
+  response->addHeader("Cache-Control", "no-cache");
+  request->send(response);
+    
+  Serial.println("HTTP request complete: /xml [" + String(millis()) + "]");
 }
 
-void httpJSONHandler()
+void httpJSONHandler(AsyncWebServerRequest *request)
 {
-  Serial.println("HTTP request: json");
-  
+  Serial.println("HTTP request from " + request->client()->remoteIP().toString() + ": /json [" + String(millis()) + "]");
+
   char buf[1024];
   to_json(lastTemperature, lastHumidity, lastCO2, lastSensorTimestamp, buf, sizeof(buf));
-  webServer.send(200, "application/json", buf);
 
-  Serial.println("HTTP request complete: json");
+  AsyncWebServerResponse *response = request->beginResponse(200, "application/json", buf);
+  response->addHeader("Access-Control-Allow-Origin", "*");
+  response->addHeader("Cache-Control", "no-cache");
+  request->send(response);
+
+  Serial.println("HTTP request complete: /json [" + String(millis()) + "]");
 }
 
 float convert_temp(float c)
