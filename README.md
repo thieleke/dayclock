@@ -1,3 +1,6 @@
+![Day Clock](https://github.com/thieleke/dayclock/blob/master/frontview.jpg)
+
+
 # Dayclock
 ESP32 based day clock + sensors
 
