@@ -40,6 +40,7 @@ Software / Libraries used (and much thanks given!):
 * https://github.com/jkb-git/ESP32Servo
 * https://github.com/fdebrabander/Arduino-LiquidCrystal-I2C-library
 * https://github.com/WifWaf/MH-Z19
+* https://github.com/me-no-dev/ESPAsyncWebServer/
 
 Suggestions:
 * If you're using a small breadboard and a ESP32 with male pins, remove the +/- rail on the breadboard and snap two breadboards together so the ESP32 module will fit with room to wire up the connections.
