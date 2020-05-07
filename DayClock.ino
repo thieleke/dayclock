@@ -14,7 +14,7 @@ const char *ssid               = "YOUR_SSID";     // Your WiFi SSID
 const char *password           = "YOUR_PASSWORD"; // Your WiFi password
 const char* ntpServer          = "pool.ntp.org";  // There are also region-specific addresses such as "us.pool.ntp.org"
 const long  gmtOffset_sec      = -21600;          // Non-daylight saving time offset from UTC, in seconds (-18000 = US Eastern Standard Time, -21600 = US Central Standard Time, etc.)
-const int   daylightOffset_sec = 3600;            // Number of minutes offset for daylight saving time (0 if daylight savings time if not applicable)
+const int   daylightOffset_sec = 3600;            // Number of seconds offset for daylight saving time (0 if daylight savings time if not applicable)
 
 #define SERVO_PIN  13
 #define DHT_PIN    14
