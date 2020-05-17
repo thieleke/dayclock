@@ -683,12 +683,14 @@ void httpDoUpdateHandler(AsyncWebServerRequest *request, const String& filename,
     if (!Update.begin(UPDATE_SIZE_UNKNOWN, cmd))
     {
 #endif
+      updateContentLen = 0;
       Update.printError(Serial);
     }
   }
 
   if (Update.write(data, len) != len) 
   {
+    updateContentLen = 0;
     Update.printError(Serial);
 #ifdef ESP8266
   } 
