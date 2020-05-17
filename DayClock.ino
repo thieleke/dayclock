@@ -51,6 +51,7 @@ const int dayPos[8] = {180, 159, 133, 107, 80,  51,  26,  0};
 #include <LiquidCrystal_I2C.h> // https://github.com/fdebrabander/Arduino-LiquidCrystal-I2C-library/archive/master.zip
 #include <MHZ19.h>             // https://github.com/WifWaf/MH-Z19/archive/master.zip
 #include <time.h>
+#include <Update.h>
 #include <WiFi.h>
 #include <Wire.h>
 
@@ -86,8 +87,10 @@ float lastHumidity = 0;
 int   lastCO2 = 0;
 int   lastSensorTimestamp = 0;
 char  lastSensorLocaltime[30];
+size_t updateContentLen = 0;
 
-void setup() {
+void setup()
+{
   Serial.begin(115200);
   Serial.println();
   Serial.println("Booted");
@@ -130,6 +133,7 @@ void setup() {
 
   updateNTP();
 
+#ifdef DEMO
   for (int i = 0; i < 8; i++)
   {
     lcd.setCursor(0, 0);
@@ -137,6 +141,7 @@ void setup() {
     servo.write(dayPos[i]);
     delay(1500);
   }
+#endif
 
   for (int i = 0; i < 8; i++)
   {
@@ -210,10 +215,21 @@ void setup() {
   udp = NULL;
 #endif
 
-  webServer.on("/",     HTTP_GET, httpRootHandler);
-  webServer.on("/xml",  HTTP_GET, httpXMLHandler);
-  webServer.on("/json", HTTP_GET, httpJSONHandler);
+  webServer.on("/",            HTTP_GET,  httpRootHandler);
+  webServer.on("/xml",         HTTP_GET,  httpXMLHandler);
+  webServer.on("/json",        HTTP_GET,  httpJSONHandler);
+  webServer.on("/favicon.ico", HTTP_GET,  httpFaviconHandler);
+  webServer.on("/update",      HTTP_GET,  httpUpdateHandler);
+  webServer.on("/do_update",   HTTP_POST, [](AsyncWebServerRequest * request) {},
+  [](AsyncWebServerRequest * request, const String & filename, size_t index, uint8_t *data, size_t len, bool final) {
+    httpDoUpdateHandler(request, filename, index, data, len, final);
+  }
+              );
   webServer.begin();
+
+#ifdef ESP32
+  Update.onProgress(update_print_progress);
+#endif
 
   lcd.setCursor(0, 0);
   lcd.print("Starting...             ");
@@ -221,6 +237,9 @@ void setup() {
 
 void loop()
 {
+  if (updateContentLen > 0)
+    return;
+
   unsigned long ticks = millis();
 
   if ((unsigned long)(ticks - sensorDelayTicks) >= delayMS)
@@ -475,6 +494,22 @@ char* localTime()
   return localTimeBuffer;
 }
 
+float convert_temp(float c)
+{
+#ifdef DISPLAY_CELSIUS
+  return c;
+#else
+  return c_to_f(c);
+#endif
+}
+
+float c_to_f(float c)
+{
+  return (c * 9.0 / 5.0) + 32.0;
+}
+
+void(* resetFunc)(void) = 0;
+
 void to_xml(float temperature, float humidity, int co2, int lastSensorTimestamp, char *buf, int len)
 {
   snprintf(buf, len - 1, "<xml millis=\"%d\" ts=\"%d\"><temp_f>%0.2f</temp_f><temp_c>%0.2f</temp_c><humidity>%0.2f</humidity><co2>%d</co2></xml>", millis(), lastSensorTimestamp, c_to_f(temperature), temperature, humidity, co2);
@@ -588,18 +623,127 @@ void httpJSONHandler(AsyncWebServerRequest *request)
   Serial.println("HTTP request complete: /json [" + String(millis()) + "]");
 }
 
-float convert_temp(float c)
+void httpFaviconHandler(AsyncWebServerRequest *request)
 {
-#ifdef DISPLAY_CELSIUS
-    return c;
+  const uint8_t iconData[283] PROGMEM = {
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10,
+  0x08, 0x04, 0x00, 0x00, 0x00, 0xB5, 0xFA, 0x37, 0xEA, 0x00, 0x00, 0x00,
+  0x07, 0x74, 0x49, 0x4D, 0x45, 0x07, 0xE4, 0x05, 0x11, 0x14, 0x1E, 0x09,
+  0xD7, 0xF6, 0xC0, 0x69, 0x00, 0x00, 0x00, 0x09, 0x70, 0x48, 0x59, 0x73,
+  0x00, 0x00, 0x0E, 0xC3, 0x00, 0x00, 0x0E, 0xC3, 0x01, 0xC7, 0x6F, 0xA8,
+  0x64, 0x00, 0x00, 0x00, 0x04, 0x67, 0x41, 0x4D, 0x41, 0x00, 0x00, 0xB1,
+  0x8F, 0x0B, 0xFC, 0x61, 0x05, 0x00, 0x00, 0x00, 0xAA, 0x49, 0x44, 0x41,
+  0x54, 0x78, 0xDA, 0xCD, 0x51, 0xD1, 0x0A, 0x82, 0x40, 0x10, 0x9C, 0x55,
+  0xF3, 0x12, 0xD3, 0xEC, 0xA9, 0x8F, 0x28, 0xEA, 0xFF, 0x7F, 0x22, 0x22,
+  0xA8, 0xE8, 0x07, 0xEA, 0x59, 0x23, 0x23, 0x4A, 0xA7, 0xD1, 0x20, 0x0B,
+  0xA2, 0xB7, 0xA0, 0x3D, 0x76, 0x6F, 0x6E, 0x77, 0x18, 0x66, 0x39, 0x23,
+  0xBE, 0x87, 0x87, 0x9F, 0x13, 0x82, 0x0E, 0x2E, 0xE8, 0x10, 0x83, 0x38,
+  0x61, 0x6A, 0x5D, 0xD7, 0x1E, 0x26, 0x97, 0x4C, 0x11, 0x6A, 0x58, 0xC3,
+  0xE0, 0xE3, 0x2A, 0x54, 0x60, 0x6E, 0x4F, 0xC2, 0x8E, 0x7D, 0x49, 0xC5,
+  0xC8, 0xD4, 0x3A, 0x32, 0xB1, 0x82, 0x25, 0x4A, 0x9C, 0x31, 0xB1, 0x96,
+  0xB0, 0x62, 0x06, 0x87, 0x08, 0xE9, 0x8B, 0x70, 0xCE, 0x8B, 0x28, 0x05,
+  0x66, 0x26, 0x0F, 0x23, 0x09, 0x8F, 0xED, 0xDD, 0xDA, 0x50, 0xEF, 0x3D,
+  0x93, 0x66, 0x8B, 0x0D, 0x29, 0xF1, 0x4F, 0x11, 0x2A, 0xB7, 0x0C, 0x1C,
+  0x2A, 0x29, 0xAC, 0xD9, 0x93, 0x31, 0xD3, 0xA9, 0xDB, 0xF4, 0x54, 0x07,
+  0xF2, 0x15, 0xC1, 0x0E, 0x6C, 0x98, 0xBE, 0xC6, 0x95, 0xEE, 0x9B, 0x06,
+  0x9E, 0x70, 0xD0, 0x62, 0x68, 0x1F, 0xFB, 0x83, 0xBF, 0xB8, 0x03, 0x49,
+  0x8E, 0x36, 0xD9, 0x7F, 0x4C, 0x9D, 0x98, 0x00, 0x00, 0x00, 0x00, 0x49,
+  0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82
+};
+  AsyncWebServerResponse *response = request->beginResponse_P(200, "image/x-icon", iconData, sizeof(iconData));
+  request->send(response);
+}
+
+void httpUpdateHandler(AsyncWebServerRequest *request)
+{
+  char* html = "<form method='POST' action='/do_update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form>";
+  request->send(200, "text/html", html);
+}
+
+void httpDoUpdateHandler(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) 
+{
+  if (!index)
+  {
+    Serial.println("Update Starting");
+    updateContentLen = request->contentLength();
+
+    lcd.setCursor(0, 0);
+    lcd.print("Updating                           ");
+    lcd.setCursor(0, 1);
+    lcd.print(String(updateContentLen) + " bytes        ");
+           
+    // if filename includes spiffs, update the spiffs partition
+    int cmd = (filename.indexOf("spiffs") > -1) ? U_SPIFFS : U_FLASH;
+#ifdef ESP8266
+    Update.runAsync(true);
+    if (!Update.begin(updateContentLen, cmd)) 
+    {
 #else
-    return c_to_f(c);
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN, cmd))
+    {
 #endif
+      updateContentLen = 0;
+      Update.printError(Serial);
+    }
+  }
+
+  if (Update.write(data, len) != len) 
+  {
+    updateContentLen = 0;
+    Update.printError(Serial);
+#ifdef ESP8266
+  } 
+  else 
+  {
+    Serial.printf("Progress: %d%%\n", (Update.progress() * 100) / Update.size());
+#endif
+  }
+
+  if (final) 
+  {
+    if (!Update.end(true))
+    {
+      updateContentLen = 0;
+      Update.printError(Serial);
+
+      char *html = "<html><head><meta http-equiv='refresh' content='5; url=/update'><title>Update Failed</title></head></html>";
+      request->send(200, "text/html", html);
+    } 
+    else
+    {
+      char *html = "<html><head><meta http-equiv='refresh' content='10; url=/'><title>Rebooting</title></head><body>Rebooting...</body></html>";
+      request->send(200, "text/html", html);
+      update_reboot();
+    }
+  }
 }
 
-float c_to_f(float c)
+void update_reboot()
 {
-  return (c * 9.0/5.0) + 32.0;
+  lcd.setCursor(0, 0);
+  lcd.print("Update Complete - Rebooting        ");
+  lcd.setCursor(0, 1);
+  lcd.print("                                   ");
+
+  Serial.println("Update complete");
+  Serial.flush();
+
+  delay(3000);
+  ESP.restart();
 }
 
-void(* resetFunc)(void) = 0;
+void update_print_progress(size_t prg, size_t sz) 
+{
+  int mapping[100];
+  float pos = 180;
+  for(int i=0; i<100; i++)
+  {
+    mapping[i] = int(pos);
+    pos -= 1.8;
+  }
+  
+  int progress = (prg * 100) / updateContentLen;
+  Serial.printf("Progress: %d%%\n", progress);
+  servo.write(mapping[progress]);
+}
