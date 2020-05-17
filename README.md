@@ -53,3 +53,7 @@ HTTP - there are 3 views into the DayClock's data
 * /json - this is the same data as XML, provided in JSON format.  This is also used by the default handler to automatically update the page.
 
 
+OTA Updates:
+* /update allows over the air updates of the firmware
+
+
