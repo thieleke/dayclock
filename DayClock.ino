@@ -529,11 +529,12 @@ void httpRootHandler(AsyncWebServerRequest *request)
    <head>
         <meta charset='UTF-8'>
         <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-        <title>Dayclock</title>
+        <title>Dayclock - %0.2f° %s / %d ppm</title>
         <script>
             setInterval(updateValues, 5000);
 
             function updateValues() {
+                var use_celsius = %s;
                 var xmlhttp = new XMLHttpRequest();
                 xmlhttp.onreadystatechange = function() {
                     if (this.readyState == 4 && this.status == 200) {
@@ -548,6 +549,17 @@ void httpRootHandler(AsyncWebServerRequest *request)
                             document.getElementById('co2_val').innerHTML = data.co2;
                         if (data.timestamp)
                             document.getElementById('timestamp_val').innerHTML = data.timestamp_str;
+
+                        document.title = 'Dayclock - ';
+                        if (use_celsius)
+                        {
+                            document.title += document.getElementById('temp_c_val').innerHTML + '° C';
+                        }
+                        else
+                        {
+                            document.title += document.getElementById('temp_f_val').innerHTML + '° F';
+                        }
+                        document.title += ' / ' + document.getElementById('co2_val').innerHTML + ' ppm';
                     }
                 };
                 xmlhttp.open("GET", '/json', true);
@@ -578,13 +590,21 @@ void httpRootHandler(AsyncWebServerRequest *request)
 )";
 
 #ifdef DISPLAY_CELSIUS
-  char *temp_css = "#temp_f { display: none; }";
+  char *tempCSS = "#temp_f { display: none; }";
+  float displayTemp = lastTemperature;
+  char *tempUnit = "C";
 #else
-  char *temp_css = "#temp_c { display: none; }";
+  char *tempCSS = "#temp_c { display: none; }";
+  float displayTemp = c_to_f(lastTemperature);
+  char *tempUnit = "F";
 #endif
 
   char buf[4096];
-  snprintf(buf, sizeof(buf) - 1, html, temp_css, c_to_f(lastTemperature), lastTemperature, lastHumidity, lastCO2, lastSensorLocaltime);
+  // Display Temperature, Temperature Unit, CO2, use_celsius - "true" (for C) or "false" (for F), temp_css, F temp, C temp, Humidity, CO2, Last Update Timestamp
+  snprintf(buf, sizeof(buf) - 1, html, displayTemp, tempUnit, lastCO2,      // HTML Title (temperature float, temperature unit string, CO2 integer)
+                                       tempUnit == "C" ? "true" : "false",  // use_celsius: Celsius = "true", F = "false" string
+                                       tempCSS,                             // CSS string
+                                       c_to_f(lastTemperature), lastTemperature, lastHumidity, lastCO2, lastSensorLocaltime);
   
   AsyncWebServerResponse *response = request->beginResponse(200, "text/html", buf);
   response->addHeader("Cache-Control", "no-cache");
