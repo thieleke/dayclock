@@ -221,10 +221,8 @@ void setup()
   webServer.on("/favicon.ico", HTTP_GET,  httpFaviconHandler);
   webServer.on("/update",      HTTP_GET,  httpUpdateHandler);
   webServer.on("/do_update",   HTTP_POST, [](AsyncWebServerRequest * request) {},
-  [](AsyncWebServerRequest * request, const String & filename, size_t index, uint8_t *data, size_t len, bool final) {
-    httpDoUpdateHandler(request, filename, index, data, len, final);
-  }
-              );
+                                          [](AsyncWebServerRequest * request, const String & filename, size_t index, uint8_t *data, size_t len, bool final) {
+                                               httpDoUpdateHandler(request, filename, index, data, len, final); });
   webServer.begin();
 
 #ifdef ESP32
@@ -677,8 +675,10 @@ void httpFaviconHandler(AsyncWebServerRequest *request)
 
 void httpUpdateHandler(AsyncWebServerRequest *request)
 {
-  char* html = "<form method='POST' action='/do_update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form>";
-  request->send(200, "text/html", html);
+  char *html = "<html><head><title>Firmware Update</title></head><body><form method='POST' action='/do_update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form></body></html>";
+  AsyncWebServerResponse *response = request->beginResponse(200, "text/html", html);
+  response->addHeader("Cache-Control", "no-cache");
+  request->send(response);
 }
 
 void httpDoUpdateHandler(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) 
