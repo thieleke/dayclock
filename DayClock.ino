@@ -731,6 +731,22 @@ void httpChartHandler(AsyncWebServerRequest *request)
             data.forEach(item => { l.push({t: new Date(item[0] * 1000), y: item[%d]}); });
             return l;
         }
+        
+        function getHumidityData() {
+            var l = []
+            data.forEach(item => { l.push({t: new Date(item[0] * 1000), y: item[3]}); });
+            return l;           
+        }
+        
+        function updateChart() {
+            data = getData();
+            if(data === null)
+                return;
+            chart.data.datasets[0].data = getCO2Data();
+            chart.data.datasets[1].data = getTemperatureData();
+            chart.data.datasets[2].data = getHumidityData();
+            chart.update();
+        }
 
         var ctx = document.getElementById('chart').getContext('2d');
         var cfg = {
@@ -743,7 +759,8 @@ void httpChartHandler(AsyncWebServerRequest *request)
                     type: 'line',
                     pointRadius: 0,
                     fill: false,
-                    lineTension: 0,
+                    lineTension: 1,
+                    cubicInterpolationMode: 'monotone',
                     borderWidth: 2,
                     yAxisID: 'y-axis-1',
                 },
@@ -755,10 +772,25 @@ void httpChartHandler(AsyncWebServerRequest *request)
                     type: 'line',
                     pointRadius: 0,
                     fill: false,
-                    lineTension: 0,
+                    lineTension: 1,
+                    cubicInterpolationMode: 'monotone',
                     borderWidth: 2,
                     yAxisID: 'y-axis-2',
-                }]
+                },
+                {
+                    label: 'Humidity (%%)',
+                    backgroundColor: '#42f5b3',
+                    borderColor: '#42f5b3',
+                    data: getHumidityData(),
+                    type: 'line',
+                    pointRadius: 0,
+                    fill: false,
+                    lineTension: 1,
+                    cubicInterpolationMode: 'monotone',
+                    borderWidth: 2,
+                    yAxisID: 'y-axis-3',
+                    hidden: true,
+                }],
             },
             options: {
                 responsive: true,
@@ -782,6 +814,8 @@ void httpChartHandler(AsyncWebServerRequest *request)
                             sampleSize: 100
                         },
                         afterBuildTicks: function(scale, ticks) {
+                            if(ticks === null)
+                                return;
                             var majorUnit = scale._majorUnit;
                             var firstTick = ticks[0];
                             var i, ilen, val, tick, currMajor, lastMajor;
@@ -813,7 +847,8 @@ void httpChartHandler(AsyncWebServerRequest *request)
                             labelString: 'CO2 (ppm)'
                         },
                         position: 'left',
-                        id: 'y-axis-1'
+                        id: 'y-axis-1',
+                        display: 'auto'
                     },
                     {
                         gridLines: {
@@ -825,7 +860,21 @@ void httpChartHandler(AsyncWebServerRequest *request)
                             labelString: 'Temperature (°%s)'
                         },
                         position: 'right',
-                        id: 'y-axis-2'
+                        id: 'y-axis-2',
+                        display: 'auto'
+                    },
+                    {
+                        gridLines: {
+                            drawBorder: false,
+                            display: false
+                        },
+                        scaleLabel: {
+                            display: true,
+                            labelString: 'Humidity (%%)'
+                        },
+                        position: 'right',
+                        id: 'y-axis-3',
+                        display: 'auto'
                     }
                     ]
                 },
@@ -847,6 +896,7 @@ void httpChartHandler(AsyncWebServerRequest *request)
         };
 
         var chart = new Chart(ctx, cfg);
+        setInterval(updateChart, 30000);
     </script>
 </body>
 </html>
