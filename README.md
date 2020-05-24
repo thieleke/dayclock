@@ -49,11 +49,11 @@ Suggestions:
 * Superglue phreakmonkey's dayclock print to the niq_ro's 1602a stand print to make a nice integrated unit.  Then stick down the DHT and MHZ-19B to the breadboard.  There are some nice 3D prints on Thingiverse for the DHT models - I like https://www.thingiverse.com/make:679955 which, scaled up, also works well for the MHZ-19B sensor.
 
 HTTP - there are a number of views into the DayClock's data
-* HTTP: a webserver is running on the ESP that defaults to showing the current temperature/humidity/CO2 level/timestamp.  This will either reload every 5 seconds for a non-Javascript browser or will update automatically.
+* / - a webserver is running on the ESP that defaults to showing the current temperature/humidity/CO2 level/timestamp.  This will either reload every 5 seconds for a non-Javascript browser or will update automatically.
 * /xml - this is a XML representation of the last sensor read values
 * /json - this is the same data as XML, provided in JSON format.  This is also used by the default handler to automatically update the page.
 * /history - 24 hours of per-minute sensor history, provided in JSON format.  Used by /chart.
-* /chart - a Chart.js based HTML5 page that displays temperature and CO2 levels over the past 24 hours.
+* /chart - a Chart.js based HTML5 page that displays temperature, humidity (disabled by default), and CO2 levels over the past 24 hours. Automatically updates every 60 seconds.
 
 OTA Updates:
 * /update allows over the air updates of the firmware
