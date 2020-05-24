@@ -37,6 +37,9 @@ const int dayPos[8] = {180, 159, 133, 107, 80,  51,  26,  0};
 #define LCD_I2C_ADDRESS 0x27
 #define LCD_COLUMNS 16
 #define LCD_ROWS 2
+
+#define HISTORY_COUNT         3600    // Set to 0 to disable
+#define HISTORY_INTERVAL_SEC  60
 /* End of constants that you'll definitely want to update */
 
 
@@ -85,9 +88,23 @@ int   co2Failures = 0;
 float lastTemperature = 0;
 float lastHumidity = 0;
 int   lastCO2 = 0;
-int   lastSensorTimestamp = 0;
+time_t lastSensorTimestamp = 0;
 char  lastSensorLocaltime[30];
 size_t updateContentLen = 0;
+
+#if HISTORY_COUNT
+unsigned int historyUint[HISTORY_COUNT][2];
+float historyFloat[HISTORY_COUNT][2];
+int historyPos = 0;
+#define HISTORY_TIMESTAMP(i)       historyUint[i][0]
+#define HISTORY_TEMPERATURE_F(i)   c_to_f(historyFloat[i][0])
+#define HISTORY_TEMPERATURE_C(i)   historyFloat[i][0]
+#define HISTORY_HUMIDITY(i)        historyFloat[i][1]
+#define HISTORY_CO2(i)             historyUint[i][1]
+#define HISTORY_CURRENT_INDEX      historyPos
+#define HISTORY_PREV_INDEX         historyPos == 0 ? (HISTORY_COUNT - 1) : historyPos - 1
+#define HISTORY_NEXT_INDEX         historyPos >= (HISTORY_COUNT - 1) ? 0 : historyPos + 1
+#endif
 
 void setup()
 {
@@ -219,6 +236,10 @@ void setup()
   webServer.on("/xml",         HTTP_GET,  httpXMLHandler);
   webServer.on("/json",        HTTP_GET,  httpJSONHandler);
   webServer.on("/favicon.ico", HTTP_GET,  httpFaviconHandler);
+#if HISTORY_COUNT
+  webServer.on("/chart",       HTTP_GET,  httpChartHandler);
+  webServer.on("/history",     HTTP_GET,  httpHistoryHandler);
+#endif
   webServer.on("/update",      HTTP_GET,  httpUpdateHandler);
   webServer.on("/do_update",   HTTP_POST, [](AsyncWebServerRequest * request) {},
                                           [](AsyncWebServerRequest * request, const String & filename, size_t index, uint8_t *data, size_t len, bool final) {
@@ -227,6 +248,11 @@ void setup()
 
 #ifdef ESP32
   Update.onProgress(update_print_progress);
+#endif
+
+#if HISTORY_COUNT
+  memset(historyUint, 0, sizeof(historyUint));
+  memset(historyFloat, 0, sizeof(historyFloat));
 #endif
 
   lcd.setCursor(0, 0);
@@ -238,7 +264,7 @@ void loop()
   if (updateContentLen > 0)
     return;
 
-  unsigned long ticks = millis();
+  const unsigned long ticks = millis();
 
   if ((unsigned long)(ticks - sensorDelayTicks) >= delayMS)
   {
@@ -259,6 +285,18 @@ void loop()
   {
     updateNTP();
   }
+
+#if HISTORY_COUNT
+  if(lastSensorTimestamp - HISTORY_TIMESTAMP(HISTORY_PREV_INDEX) >= HISTORY_INTERVAL_SEC)
+  {
+    HISTORY_TIMESTAMP(historyPos)     = lastSensorTimestamp;
+    HISTORY_TEMPERATURE_C(historyPos) = lastTemperature;
+    HISTORY_HUMIDITY(historyPos)      = lastHumidity;
+    HISTORY_CO2(historyPos)           = lastCO2;
+
+    historyPos = HISTORY_NEXT_INDEX;
+  }
+#endif
 
   delay(100);
 }
@@ -308,8 +346,8 @@ void print_sensors()
     maxCO2 = max(maxCO2, CO2);
   }
 
-  Serial.print("    MH-Z19B Temperature (C): ");
-  Serial.println(String(mhz19.getTemperature()));
+  //Serial.print("    MH-Z19B Temperature (C): ");
+  //Serial.println(String(mhz19.getTemperature()));
   Serial.print("    Min CO2: ");
   Serial.println(minCO2);
   Serial.print("    Max CO2: ");
@@ -527,7 +565,7 @@ void httpRootHandler(AsyncWebServerRequest *request)
    <head>
         <meta charset='UTF-8'>
         <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-        <title>Dayclock - %0.2f° %s / %d ppm</title>
+        <title>Dayclock  %0.2f° %s / %d ppm</title>
         <script>
             setInterval(updateValues, 5000);
 
@@ -548,14 +586,14 @@ void httpRootHandler(AsyncWebServerRequest *request)
                         if (data.timestamp)
                             document.getElementById('timestamp_val').innerHTML = data.timestamp_str;
 
-                        document.title = 'Dayclock - ';
+                        document.title = 'Dayclock';
                         if (use_celsius)
                         {
-                            document.title += document.getElementById('temp_c_val').innerHTML + '° C';
+                            document.title += "  " + document.getElementById('temp_c_val').innerHTML + '° C';
                         }
                         else
                         {
-                            document.title += document.getElementById('temp_f_val').innerHTML + '° F';
+                            document.title += "  " + document.getElementById('temp_f_val').innerHTML + '° F';
                         }
                         document.title += ' / ' + document.getElementById('co2_val').innerHTML + ' ppm';
                     }
@@ -640,6 +678,225 @@ void httpJSONHandler(AsyncWebServerRequest *request)
 
   Serial.println("HTTP request complete: /json [" + String(millis()) + "]");
 }
+
+#if HISTORY_COUNT
+void httpChartHandler(AsyncWebServerRequest *request)
+{
+  Serial.println("HTTP request from " + request->client()->remoteIP().toString() + ": /chart [" + String(millis()) + "]");
+
+  const char *html = R"(
+<html>
+<head>
+    <title>Dayclock - History Chart</title>
+    <meta charset='UTF-8'>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.18.1/moment.min.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.3/Chart.min.js'></script>
+    <style>
+        canvas 
+        {
+            -moz-user-select: none;
+            -webkit-user-select: none;
+            -ms-user-select: none;
+        }
+    </style>
+</head>
+<body>
+    <div style='width:80%%;margin-left:auto;margin-right:auto;'>
+        <canvas id='chart'></canvas>
+    </div>
+    <script>
+        var data = getData();
+        
+        function getData() {
+            var jsonData = null;
+            var xmlhttp = new XMLHttpRequest();
+            xmlhttp.onreadystatechange = function() {
+                if (this.readyState == 4 && this.status == 200) {
+                    jsonData = JSON.parse(this.responseText);
+                }
+            }
+            xmlhttp.open('GET', '/history', false);
+            xmlhttp.send();
+            return jsonData;
+        }
+        
+        function getCO2Data() {
+            var l = [];
+            data.forEach(item => { l.push({t: new Date(item[0] * 1000), y: item[4]}); });
+            return l;
+        }
+
+        function getTemperatureData() {
+            var l = []
+            data.forEach(item => { l.push({t: new Date(item[0] * 1000), y: item[%d]}); });
+            return l;
+        }
+
+        var ctx = document.getElementById('chart').getContext('2d');
+        var cfg = {
+            data: {
+                datasets: [{
+                    label: 'CO2 (ppm)',
+                    backgroundColor: '#4dc9f6',
+                    borderColor: '#4dc9f6',
+                    data: getCO2Data(),
+                    type: 'line',
+                    pointRadius: 0,
+                    fill: false,
+                    lineTension: 0,
+                    borderWidth: 2,
+                    yAxisID: 'y-axis-1',
+                },
+                {
+                    label: 'Temperature (°%s)',
+                    backgroundColor: '#f00000',
+                    borderColor: '#f00000',
+                    data: getTemperatureData(),
+                    type: 'line',
+                    pointRadius: 0,
+                    fill: false,
+                    lineTension: 0,
+                    borderWidth: 2,
+                    yAxisID: 'y-axis-2',
+                }]
+            },
+            options: {
+                responsive: true,
+                animation: {
+                    duration: 0
+                },
+                scales: {
+                    xAxes: [{
+                        type: 'time',
+                        distribution: 'series',
+                        offset: true,
+                        ticks: {
+                            major: {
+                                enabled: true,
+                                fontStyle: 'bold'
+                            },
+                            source: 'data',
+                            autoSkip: true,
+                            autoSkipPadding: 75,
+                            maxRotation: 0,
+                            sampleSize: 100
+                        },
+                        afterBuildTicks: function(scale, ticks) {
+                            var majorUnit = scale._majorUnit;
+                            var firstTick = ticks[0];
+                            var i, ilen, val, tick, currMajor, lastMajor;
+
+                            val = moment(ticks[0].value);
+                            if (val.second() === 0) {
+                                firstTick.major = true;
+                            } else {
+                                firstTick.major = false;
+                            }
+                            lastMajor = val.get(majorUnit);
+
+                            for (i = 1, ilen = ticks.length; i < ilen; i++) {
+                                tick = ticks[i];
+                                val = moment(tick.value);
+                                currMajor = val.get(majorUnit);
+                                tick.major = currMajor !== lastMajor;
+                                lastMajor = currMajor;
+                            }
+                            return ticks;
+                        }
+                    }],
+                    yAxes: [{
+                        gridLines: {
+                            drawBorder: false
+                        },
+                        scaleLabel: {
+                            display: true,
+                            labelString: 'CO2 (ppm)'
+                        },
+                        position: 'left',
+                        id: 'y-axis-1'
+                    },
+                    {
+                        gridLines: {
+                            drawBorder: false,
+                            display: false
+                        },
+                        scaleLabel: {
+                            display: true,
+                            labelString: 'Temperature (°%s)'
+                        },
+                        position: 'right',
+                        id: 'y-axis-2'
+                    }
+                    ]
+                },
+                tooltips: {
+                    intersect: false,
+                    mode: 'index',
+                    callbacks: {
+                        label: function(tooltipItem, myData) {
+                            var label = myData.datasets[tooltipItem.datasetIndex].label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            label += tooltipItem.value;
+                            return label;
+                        }
+                    }
+                }
+            }
+        };
+
+        var chart = new Chart(ctx, cfg);
+    </script>
+</body>
+</html>
+)";
+
+#ifdef DISPLAY_CELSIUS
+  int tempIndex = 2;
+  char *tempUnit = "C";
+#else
+  int tempIndex = 1;
+  char *tempUnit = "F";
+#endif
+
+  char buf[8192];
+  snprintf(buf, sizeof(buf) - 1, html, tempIndex, tempUnit, tempUnit);
+  
+  AsyncWebServerResponse *response = request->beginResponse(200, "text/html", buf);
+  response->addHeader("Cache-Control", "no-cache");
+  request->send(response);
+  
+  Serial.println("HTTP request complete: /chart [" + String(millis()) + "]");
+}
+
+void httpHistoryHandler(AsyncWebServerRequest *request)
+{
+  Serial.println("HTTP request from " + request->client()->remoteIP().toString() + ": /history [" + String(millis()) + "]");
+
+  // Returns a JSON list of [Timestamp, Temperature (F), Temperature (C), Humidity, CO2]
+  AsyncResponseStream *response = request->beginResponseStream("application/json");
+  response->addHeader("Access-Control-Allow-Origin", "*");
+  response->addHeader("Cache-Control", "no-cache");
+  response->print("[");
+  
+  for(int i=0; i<HISTORY_COUNT; i++)
+  {
+    if(HISTORY_TIMESTAMP(i) == 0)
+      break;
+    if(i > 0)
+      response->print(",");
+    
+    response->printf("[%d,%0.2f,%0.2f,%0.2f,%d]", HISTORY_TIMESTAMP(i), c_to_f(HISTORY_TEMPERATURE_C(i)), HISTORY_TEMPERATURE_C(i), HISTORY_HUMIDITY(i), HISTORY_CO2(i));
+  }
+
+  response->print("]");
+  request->send(response);
+
+  
+  Serial.println("HTTP request complete: /history [" + String(millis()) + "]");
+}
+#endif
 
 void httpFaviconHandler(AsyncWebServerRequest *request)
 {

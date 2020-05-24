@@ -40,20 +40,20 @@ Software / Libraries used (and much thanks given!):
 * https://github.com/jkb-git/ESP32Servo
 * https://github.com/fdebrabander/Arduino-LiquidCrystal-I2C-library
 * https://github.com/WifWaf/MH-Z19
-* https://github.com/me-no-dev/ESPAsyncWebServer/
+* https://github.com/me-no-dev/ESPAsyncWebServer
+* https://github.com/chartjs/Chart.js
 
 Suggestions:
 * If you're using a small breadboard and a ESP32 with male pins, remove the +/- rail on the breadboard and snap two breadboards together so the ESP32 module will fit with room to wire up the connections.
 * MHZ-19B is pretty touchy - read https://github.com/WifWaf/MH-Z19/blob/master/README.md for the details. 
 * Superglue phreakmonkey's dayclock print to the niq_ro's 1602a stand print to make a nice integrated unit.  Then stick down the DHT and MHZ-19B to the breadboard.  There are some nice 3D prints on Thingiverse for the DHT models - I like https://www.thingiverse.com/make:679955 which, scaled up, also works well for the MHZ-19B sensor.
 
-HTTP - there are 3 views into the DayClock's data
+HTTP - there are a number of views into the DayClock's data
 * HTTP: a webserver is running on the ESP that defaults to showing the current temperature/humidity/CO2 level/timestamp.  This will either reload every 5 seconds for a non-Javascript browser or will update automatically.
 * /xml - this is a XML representation of the last sensor read values
 * /json - this is the same data as XML, provided in JSON format.  This is also used by the default handler to automatically update the page.
-
+* /history - 24 hours of per-minute sensor history, provided in JSON format.  Used by /chart.
+* /chart - a Chart.js based HTML5 page that displays temperature and CO2 levels over the past 24 hours.
 
 OTA Updates:
 * /update allows over the air updates of the firmware
-
-
