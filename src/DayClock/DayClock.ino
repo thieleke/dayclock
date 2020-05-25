@@ -244,6 +244,14 @@ void loop()
     struct tm t;
     getLocalTime(&t);
     move_pointer(t.tm_wday, t.tm_hour);
+    Serial.println("---------------------------------------------------------------------");
+  }
+
+  // Update NTP every 6 hours
+  if ((unsigned long)(ticks - ntpUpdated) >= 6 * 60 * 60 * 1000)
+  {
+    updateNTP();
+  }
 
 #if HISTORY_COUNT
   // Ignore non-sensical sensor readings and try later
@@ -262,15 +270,6 @@ void loop()
       }
     }
 #endif
-
-    Serial.println("---------------------------------------------------------------------");
-  }
-
-  // Update NTP every 6 hours
-  if ((unsigned long)(ticks - ntpUpdated) >= 6 * 60 * 60 * 1000)
-  {
-    updateNTP();
-  }
 }
 
 void print_sensors()
