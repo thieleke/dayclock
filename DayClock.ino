@@ -559,12 +559,12 @@ void(* resetFunc)(void) = 0;
 
 void to_xml(float temperature, float humidity, int co2, int lastSensorTimestamp, char *buf, int len)
 {
-  snprintf(buf, len - 1, "<xml millis=\"%d\" ts=\"%d\"><temp_f>%0.2f</temp_f><temp_c>%0.2f</temp_c><humidity>%0.2f</humidity><co2>%d</co2></xml>", millis(), lastSensorTimestamp, c_to_f(temperature), temperature, humidity, co2);
+  snprintf(buf, len - 1, "<xml millis=\"%lu\" ts=\"%d\"><temp_f>%0.2f</temp_f><temp_c>%0.2f</temp_c><humidity>%0.2f</humidity><co2>%d</co2></xml>", millis(), lastSensorTimestamp, c_to_f(temperature), temperature, humidity, co2);
 }
 
 void to_json(float temperature, float humidity, int co2, int lastSensorTimestamp, char *buf, int len)
 {
-  snprintf(buf, len - 1, "{\"temp_f\": %0.2f, \"temp_c\": %0.2f, \"humidity\": %0.2f, \"co2\": %d, \"timestamp\": %d, \"millis\": %d, \"timestamp_str\": \"%s\"}", c_to_f(temperature), temperature, humidity, co2, lastSensorTimestamp, millis(), lastSensorLocaltime);
+  snprintf(buf, len - 1, "{\"temp_f\": %0.2f, \"temp_c\": %0.2f, \"humidity\": %0.2f, \"co2\": %d, \"timestamp\": %d, \"millis\": %lu, \"timestamp_str\": \"%s\"}", c_to_f(temperature), temperature, humidity, co2, lastSensorTimestamp, millis(), lastSensorLocaltime);
 }
 
 void httpRootHandler(AsyncWebServerRequest *request)
@@ -638,27 +638,27 @@ void httpRootHandler(AsyncWebServerRequest *request)
 )";
 
 #ifdef DISPLAY_CELSIUS
-  char *tempCSS = "#temp_f { display: none; }";
+  const char *tempCSS = "#temp_f { display: none; }";
   float displayTemp = lastTemperature;
-  char *tempUnit = "C";
+  const char *tempUnit = "C";
 #else
-  char *tempCSS = "#temp_c { display: none; }";
+  const char *tempCSS = "#temp_c { display: none; }";
   float displayTemp = c_to_f(lastTemperature);
-  char *tempUnit = "F";
+  const char *tempUnit = "F";
 #endif
 
 #if HISTORY_COUNT
-  char *chartHTML = "<a href='/chart' title='Chart' target='_chart'><img src='/chart.png' style='float: right;' width='32' height='32'></a>";
+  const char *chartHTML = "<a href='/chart' title='Chart' target='_chart'><img src='/chart.png' style='float: right;' width='32' height='32'></a>";
 #else
-  char *chartHTML = "";
+  const char *chartHTML = "";
 #endif
 
   char buf[4096];
   // Chart HTML, Display Temperature, Temperature Unit, CO2, use_celsius - "true" (for C) or "false" (for F), CSS, Chart HTML, F temp, C temp, Humidity, CO2, Last Update Timestamp
-  snprintf(buf, sizeof(buf) - 1, html, displayTemp, tempUnit, lastCO2,      // HTML Title (temperature float, temperature unit string, CO2 integer)
-                                       tempUnit == "C" ? "true" : "false",  // use_celsius: Celsius = "true", F = "false" string
-                                       tempCSS,                             // CSS string
-                                       chartHTML,                           // Chart HTML link
+  snprintf(buf, sizeof(buf) - 1, html, displayTemp, tempUnit, lastCO2,                 // HTML Title (temperature float, temperature unit string, CO2 integer)
+                                       strcmp(tempUnit, "C") == 0 ? "true" : "false",  // use_celsius: Celsius = "true", F = "false" string
+                                       tempCSS,                                        // CSS string
+                                       chartHTML,                                      // Chart HTML link
                                        c_to_f(lastTemperature), lastTemperature, lastHumidity, lastCO2, lastSensorLocaltime);
 
   AsyncWebServerResponse *response = request->beginResponse(200, "text/html", buf);
@@ -927,10 +927,10 @@ void httpChartHandler(AsyncWebServerRequest *request)
 
 #ifdef DISPLAY_CELSIUS
   int tempIndex = 2;
-  char *tempUnit = "C";
+  const char *tempUnit = "C";
 #else
   int tempIndex = 1;
-  char *tempUnit = "F";
+  const char *tempUnit = "F";
 #endif
 
   char buf[8192];
@@ -973,7 +973,7 @@ void httpHistoryHandler(AsyncWebServerRequest *request)
 
 void httpUpdateHandler(AsyncWebServerRequest *request)
 {
-  char *html = "<html><head><title>Firmware Update</title></head><body><form method='POST' action='/do_update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form></body></html>";
+  const char *html = "<html><head><title>Firmware Update</title></head><body><form method='POST' action='/do_update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form></body></html>";
   AsyncWebServerResponse *response = request->beginResponse(200, "text/html", html);
   response->addHeader("Cache-Control", "no-cache");
   request->send(response);
@@ -1025,12 +1025,12 @@ void httpDoUpdateHandler(AsyncWebServerRequest *request, const String& filename,
       updateContentLen = 0;
       Update.printError(Serial);
 
-      char *html = "<html><head><meta http-equiv='refresh' content='5; url=/update'><title>Update Failed</title></head></html>";
+      const char *html = "<html><head><meta http-equiv='refresh' content='5; url=/update'><title>Update Failed</title></head></html>";
       request->send(200, "text/html", html);
     } 
     else
     {
-      char *html = "<html><head><meta http-equiv='refresh' content='10; url=/'><title>Rebooting</title></head><body>Rebooting...</body></html>";
+      const char *html = "<html><head><meta http-equiv='refresh' content='10; url=/'><title>Rebooting</title></head><body>Rebooting...</body></html>";
       request->send(200, "text/html", html);
       update_reboot();
     }
