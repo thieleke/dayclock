@@ -288,14 +288,18 @@ void loop()
   }
 
 #if HISTORY_COUNT
-  if(lastSensorTimestamp - HISTORY_TIMESTAMP(HISTORY_PREV_INDEX) >= HISTORY_INTERVAL_SEC)
+  // Ignore non-sensical sensor readings and try later
+  if(lastTemperature != 0 && lastHumidity != 0 && lastCO2 >= CO2_MIN && lastCO2 <= CO2_MAX)
   {
-    HISTORY_TIMESTAMP(historyPos)     = lastSensorTimestamp;
-    HISTORY_TEMPERATURE_C(historyPos) = lastTemperature;
-    HISTORY_HUMIDITY(historyPos)      = lastHumidity;
-    HISTORY_CO2(historyPos)           = lastCO2;
-
-    historyPos = HISTORY_NEXT_INDEX;
+    if(lastSensorTimestamp - HISTORY_TIMESTAMP(HISTORY_PREV_INDEX) >= HISTORY_INTERVAL_SEC)
+    {
+      HISTORY_TIMESTAMP(historyPos)     = lastSensorTimestamp;
+      HISTORY_TEMPERATURE_C(historyPos) = lastTemperature;
+      HISTORY_HUMIDITY(historyPos)      = lastHumidity;
+      HISTORY_CO2(historyPos)           = lastCO2;
+  
+      historyPos = HISTORY_NEXT_INDEX;
+    }
   }
 #endif
 
@@ -542,7 +546,13 @@ float convert_temp(float c)
 
 float c_to_f(float c)
 {
-  return (c * 9.0 / 5.0) + 32.0;
+  return((c * 1.8) + 32);
+}
+
+float round_to_tenths(float val)
+{
+  double d = round((double)val * 10.0) / 10.0;
+  return float(d);
 }
 
 void(* resetFunc)(void) = 0;
@@ -709,48 +719,50 @@ void httpChartHandler(AsyncWebServerRequest *request)
         }
     </style>
 </head>
-<body>
+<body onload='getData()'>
     <div style='width:80%%;margin-left:auto;margin-right:auto;'>
         <canvas id='chart'></canvas>
     </div>
     <script>
-        var data = getData();
-        
-        function getData() {
-            var jsonData = null;
-            var xmlhttp = new XMLHttpRequest();
+        var data = null;
+
+        function getData(do_async=true) {
+            let xmlhttp = new XMLHttpRequest();
             xmlhttp.onreadystatechange = function() {
                 if (this.readyState == 4 && this.status == 200) {
-                    jsonData = JSON.parse(this.responseText);
+                    data = JSON.parse(this.responseText);
+                    updateChart();
                 }
             }
-            xmlhttp.open('GET', '/history', false);
+            xmlhttp.open('GET', '/history', do_async);
             xmlhttp.send();
-            return jsonData;
         }
         
         function getCO2Data() {
-            var l = [];
-            data.forEach(item => { l.push({t: new Date(item[0] * 1000), y: item[4]}); });
+            let l = [];
+            if(data !== null)
+                data.forEach(item => { l.push({t: new Date(item[0] * 1000), y: item[4]}); });
             return l;
         }
 
         function getTemperatureData() {
-            var l = []
-            data.forEach(item => { l.push({t: new Date(item[0] * 1000), y: item[%d]}); });
+            let l = []
+            if(data !== null)
+                data.forEach(item => { l.push({t: new Date(item[0] * 1000), y: item[1]}); });
             return l;
         }
         
         function getHumidityData() {
-            var l = []
-            data.forEach(item => { l.push({t: new Date(item[0] * 1000), y: item[3]}); });
-            return l;           
+            let l = []
+            if(data !== null)
+                data.forEach(item => { l.push({t: new Date(item[0] * 1000), y: item[3]}); });
+            return l;
         }
         
         function updateChart() {
-            data = getData();
             if(data === null)
-                return;
+                console.log('updateChart - data is null');
+                
             chart.data.datasets[0].data = getCO2Data();
             chart.data.datasets[1].data = getTemperatureData();
             chart.data.datasets[2].data = getHumidityData();
@@ -857,7 +869,9 @@ void httpChartHandler(AsyncWebServerRequest *request)
                         },
                         position: 'left',
                         id: 'y-axis-1',
-                        display: 'auto'
+                        display: 'auto',
+                        suggestedMin: 350,
+                        suggestedMax: 4000
                     },
                     {
                         gridLines: {
@@ -905,7 +919,7 @@ void httpChartHandler(AsyncWebServerRequest *request)
         };
 
         var chart = new Chart(ctx, cfg);
-        setInterval(updateChart, 30000);
+        setInterval(getData, 30000);
     </script>
 </body>
 </html>
@@ -946,7 +960,7 @@ void httpHistoryHandler(AsyncWebServerRequest *request)
     if(i > 0)
       response->print(",");
     
-    response->printf("[%d,%0.2f,%0.2f,%0.2f,%d]", HISTORY_TIMESTAMP(i), c_to_f(HISTORY_TEMPERATURE_C(i)), HISTORY_TEMPERATURE_C(i), HISTORY_HUMIDITY(i), HISTORY_CO2(i));
+    response->printf("[%d,%0.1f,%0.1f,%0.1f,%d]", HISTORY_TIMESTAMP(i), round_to_tenths(c_to_f(HISTORY_TEMPERATURE_C(i))), round_to_tenths(HISTORY_TEMPERATURE_C(i)), round_to_tenths(HISTORY_HUMIDITY(i)), HISTORY_CO2(i));
   }
 
   response->print("]");
