@@ -179,7 +179,7 @@ void httpChartHandler(AsyncWebServerRequest *request)
         function getTemperatureData() {
             let l = []
             if(data !== null)
-                data.forEach(item => { l.push({t: new Date(item[0] * 1000), y: item[1]}); });
+                data.forEach(item => { l.push({t: new Date(item[0] * 1000), y: item[%d]}); });
             return l;
         }
         
@@ -364,7 +364,7 @@ void httpChartHandler(AsyncWebServerRequest *request)
   const char *tempUnit = "F";
 #endif
 
-  char buf[8192];
+  char buf[10000];
   snprintf(buf, sizeof(buf) - 1, html, tempIndex, tempUnit, tempUnit);
   
   AsyncWebServerResponse *response = request->beginResponse(200, "text/html", buf);

@@ -62,14 +62,14 @@ size_t updateContentLen = 0;
 unsigned int historyUint[HISTORY_COUNT][2];
 float historyFloat[HISTORY_COUNT][2];
 int historyPos = 0;
-#define HISTORY_TIMESTAMP(i)       historyUint[i][0]
-#define HISTORY_TEMPERATURE_F(i)   c_to_f(historyFloat[i][0])
-#define HISTORY_TEMPERATURE_C(i)   historyFloat[i][0]
-#define HISTORY_HUMIDITY(i)        historyFloat[i][1]
-#define HISTORY_CO2(i)             historyUint[i][1]
-#define HISTORY_CURRENT_INDEX      historyPos
-#define HISTORY_PREV_INDEX         historyPos == 0 ? (HISTORY_COUNT - 1) : historyPos - 1
-#define HISTORY_NEXT_INDEX         historyPos >= (HISTORY_COUNT - 1) ? 0 : historyPos + 1
+#define HISTORY_TIMESTAMP(i)       (historyUint[i][0])
+#define HISTORY_TEMPERATURE_F(i)   (c_to_f(historyFloat[i][0]))7
+#define HISTORY_TEMPERATURE_C(i)   (historyFloat[i][0])
+#define HISTORY_HUMIDITY(i)        (historyFloat[i][1])
+#define HISTORY_CO2(i)             (historyUint[i][1])
+#define HISTORY_CURRENT_INDEX      (historyPos)
+#define HISTORY_PREV_INDEX         (historyPos == 0 ? (HISTORY_COUNT - 1) : historyPos - 1)
+#define HISTORY_NEXT_INDEX         (historyPos >= (HISTORY_COUNT - 1) ? 0 : historyPos + 1)
 #endif
 
 void setup()
@@ -245,13 +245,6 @@ void loop()
     getLocalTime(&t);
     move_pointer(t.tm_wday, t.tm_hour);
     Serial.println("---------------------------------------------------------------------");
-  }
-
-  // Update NTP every 6 hours
-  if ((unsigned long)(ticks - ntpUpdated) >= 6 * 60 * 60 * 1000)
-  {
-    updateNTP();
-  }
 
 #if HISTORY_COUNT
   // Ignore non-sensical sensor readings and try later
@@ -269,7 +262,14 @@ void loop()
         historyPos = HISTORY_NEXT_INDEX;
       }
     }
-#endif
+#endif    
+  }
+
+  // Update NTP every 6 hours
+  if ((unsigned long)(ticks - ntpUpdated) >= 6 * 60 * 60 * 1000)
+  {
+    updateNTP();
+  }
 }
 
 void print_sensors()
