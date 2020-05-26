@@ -1,3 +1,13 @@
+void to_xml(float temperature, float humidity, int co2, int lastSensorTimestamp, char *buf, int len)
+{
+  snprintf(buf, len - 1, "<xml millis=\"%lu\" ts=\"%d\"><temp_f>%0.2f</temp_f><temp_c>%0.2f</temp_c><humidity>%0.2f</humidity><co2>%d</co2></xml>", millis(), lastSensorTimestamp, c_to_f(temperature), temperature, humidity, co2);
+}
+
+void to_json(float temperature, float humidity, int co2, int lastSensorTimestamp, char *buf, int len)
+{
+  snprintf(buf, len - 1, "{\"temp_f\": %0.2f, \"temp_c\": %0.2f, \"humidity\": %0.2f, \"co2\": %d, \"timestamp\": %d, \"millis\": %lu, \"timestamp_str\": \"%s\"}", c_to_f(temperature), temperature, humidity, co2, lastSensorTimestamp, millis(), lastSensorLocaltime);
+}
+
 void httpRootHandler(AsyncWebServerRequest *request)
 {
   Serial.println("HTTP request from " + request->client()->remoteIP().toString() + ": / [" + String(millis()) + "]");
@@ -383,17 +393,47 @@ void httpHistoryHandler(AsyncWebServerRequest *request)
   response->addHeader("Access-Control-Allow-Origin", "*");
   response->addHeader("Cache-Control", "no-cache");
   response->print("[");
+
+  inHistoryHandler = true;
+  bool hasOutput = false;
+  history_t *h;
+  int pos = 0;
+  unsigned int minTimestamp = 0;
+  int minPos = 0;
   
+  // Find the initial position based on the lowest timestamp
   for(int i=0; i<HISTORY_COUNT; i++)
   {
-    if(HISTORY_TIMESTAMP(i) == 0)
+    h = get_history(i);
+    if(h->timestamp == 0)
       break;
-    if(i > 0)
-      response->print(",");
-    
-    response->printf("[%d,%0.1f,%0.1f,%0.1f,%d]", HISTORY_TIMESTAMP(i), round_to_tenths(c_to_f(HISTORY_TEMPERATURE_C(i))), round_to_tenths(HISTORY_TEMPERATURE_C(i)), round_to_tenths(HISTORY_HUMIDITY(i)), HISTORY_CO2(i));
+
+    if(minTimestamp == 0 || h->timestamp < minTimestamp)
+    {
+      minTimestamp = h->timestamp;
+      minPos = i;
+    }
   }
 
+  pos = minPos;
+
+  for(int i=0; i<HISTORY_COUNT; i++)
+  {
+    h = get_history(pos);
+    if(h->timestamp == 0)
+      break;
+
+    if(hasOutput == true)
+      response->print(",");
+      
+    response->printf("[%lu,%0.1f,%0.1f,%0.1f,%u]", h->timestamp, round_to_tenths(c_to_f(h->temperature)), round_to_tenths(h->temperature), round_to_tenths(h->humidity), h->co2);
+    hasOutput = true;  
+
+    pos = get_next_index(pos);
+  }
+  
+  inHistoryHandler = false;
+  
   response->print("]");
   request->send(response);
 

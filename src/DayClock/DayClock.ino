@@ -57,19 +57,19 @@ int   lastCO2 = 0;
 time_t lastSensorTimestamp = 0;
 char  lastSensorLocaltime[30];
 size_t updateContentLen = 0;
+bool inHistoryHandler = false; 
 
 #if HISTORY_COUNT
-unsigned int historyUint[HISTORY_COUNT][2];
-float historyFloat[HISTORY_COUNT][2];
-int historyPos = 0;
-#define HISTORY_TIMESTAMP(i)       (historyUint[i][0])
-#define HISTORY_TEMPERATURE_F(i)   (c_to_f(historyFloat[i][0]))7
-#define HISTORY_TEMPERATURE_C(i)   (historyFloat[i][0])
-#define HISTORY_HUMIDITY(i)        (historyFloat[i][1])
-#define HISTORY_CO2(i)             (historyUint[i][1])
-#define HISTORY_CURRENT_INDEX      (historyPos)
-#define HISTORY_PREV_INDEX         (historyPos == 0 ? (HISTORY_COUNT - 1) : historyPos - 1)
-#define HISTORY_NEXT_INDEX         (historyPos >= (HISTORY_COUNT - 1) ? 0 : historyPos + 1)
+struct history_t
+{
+  time_t timestamp;
+  float temperature;
+  float humidity;
+  unsigned int co2;  
+};
+
+history_t history[HISTORY_COUNT];
+int historyPos = HISTORY_COUNT - 1;
 #endif
 
 void setup()
@@ -218,8 +218,7 @@ void setup()
 #endif
 
 #if HISTORY_COUNT
-  memset(historyUint, 0, sizeof(historyUint));
-  memset(historyFloat, 0, sizeof(historyFloat));
+  memset(history, 0, sizeof(history));
 #endif
 
   lcd.setCursor(0, 0);
@@ -247,19 +246,14 @@ void loop()
     Serial.println("---------------------------------------------------------------------");
 
 #if HISTORY_COUNT
-  // Ignore non-sensical sensor readings and try later
-    if(lastTemperature != NO_DATA_LOW && lastTemperature != NO_DATA_HIGH && \
-       lastHumidity != NO_DATA_LOW && lastHumidity != NO_DATA_HIGH && \
-       lastCO2 >= CO2_MIN && lastCO2 <= CO2_MAX)
+    // Ignore non-sensical sensor readings and try later
+    if(inHistoryHandler == false && lastSensorTimestamp != 0 || lastCO2 >= CO2_MIN && lastCO2 <= CO2_MAX)
     {
-      if(lastSensorTimestamp - HISTORY_TIMESTAMP(HISTORY_PREV_INDEX) >= HISTORY_INTERVAL_SEC)
+      // For the first update, just use pos = 0;
+      history_t *h = get_previous_history();
+      if(lastSensorTimestamp - h->timestamp >= HISTORY_INTERVAL_SEC)
       {
-        HISTORY_TIMESTAMP(historyPos)     = lastSensorTimestamp;
-        HISTORY_TEMPERATURE_C(historyPos) = lastTemperature;
-        HISTORY_HUMIDITY(historyPos)      = lastHumidity;
-        HISTORY_CO2(historyPos)           = lastCO2;
-  
-        historyPos = HISTORY_NEXT_INDEX;
+        add_history(lastSensorTimestamp, lastTemperature, lastHumidity, lastCO2);
       }
     }
 #endif    
@@ -272,6 +266,7 @@ void loop()
   }
 }
 
+
 void print_sensors()
 {
   sensors_event_t event;
@@ -281,29 +276,29 @@ void print_sensors()
   int CO2;
   float t = 0.0, h = 0.0;
 
-  Serial.println("print_sensors() [" + String(millis()) + "]");
+  //Serial.println("print_sensors() [" + String(millis()) + "]");
 
   lastCO2 = CO2 = mhz19.getCO2();
-  Serial.print("    CO2 (ppm): ");
-  Serial.println(CO2);
+  //Serial.print("    CO2 (ppm): ");
+  //Serial.println(CO2);
 
   if (CO2 <= 0 || mhz19.errorCode != RESULT_OK)
   {
     co2Failures++;
-    Serial.println("    MH-Z19B failure " + String(co2Failures) + " errorCode = " + String(mhz19.errorCode));
+    //Serial.println("    MH-Z19B failure " + String(co2Failures) + " errorCode = " + String(mhz19.errorCode));
     mhz19.verify();
     if (mhz19.errorCode == RESULT_OK)
     {
       co2Failures = 0;
       CO2 = mhz19.getCO2();
-      Serial.println("    MH-Z19B recovered");
+      //Serial.println("    MH-Z19B recovered");
     }
     else
     {
       if (co2Failures >= 3)
       {
         co2Failures = 0;
-        Serial.println("    Preforming a reset on CO2 sensor - error_code = " + String(mhz19.errorCode));
+        //Serial.println("    Preforming a reset on CO2 sensor - error_code = " + String(mhz19.errorCode));
         mhz19.recoveryReset();
         delay(5000);
       }
@@ -319,20 +314,20 @@ void print_sensors()
 
   //Serial.print("    MH-Z19B Temperature (C): ");
   //Serial.println(String(mhz19.getTemperature()));
-  Serial.print("    Min CO2: ");
-  Serial.println(minCO2);
-  Serial.print("    Max CO2: ");
-  Serial.println(maxCO2);
+  //Serial.print("    Min CO2: ");
+  //Serial.println(minCO2);
+  //Serial.print("    Max CO2: ");
+  //Serial.println(maxCO2);
 
   // Get temperature event and print its value
   dht.temperature().getEvent(&event);
   t = event.temperature;
-  Serial.println("    T: " + String(t) + " C / " + String(c_to_f(t)) + " F" );
+  //Serial.println("    T: " + String(t) + " C / " + String(c_to_f(t)) + " F" );
 
   noTemp = isnan(t);
   if (noTemp)
   {
-    Serial.println(F("    Error reading temperature!"));
+    //Serial.println(F("    Error reading temperature!"));
     lcd.setCursor(0, 0);
     lcd.print("Error reading temperature            ");
   }
@@ -371,12 +366,12 @@ void print_sensors()
   // Get humidity event and print its value.
   dht.humidity().getEvent(&event);
   h = event.relative_humidity;
-  Serial.println("    H: " + String(h) + "%");
+  //Serial.println("    H: " + String(h) + "%");
 
   noHumidity = isnan(h);
   if (noHumidity)
   {
-    Serial.println(F("    Error reading humidity!"));
+    //Serial.println(F("    Error reading humidity!"));
     lcd.setCursor(0, 0);
     lcd.print("Error reading humidity                    ");
   }
@@ -448,12 +443,12 @@ void print_sensors()
     loops = 0;
   }
 
-  Serial.println("print_sensors() complete [" + String(millis()) + "]");
+  //Serial.println("print_sensors() complete [" + String(millis()) + "]");
 }
 
 void move_pointer(int wday, int hour)
 {
-  Serial.println("move_pointer(" + String(wday) + ", " + String(hour) + ") [" + String(millis()) + "]");
+  //Serial.println("move_pointer(" + String(wday) + ", " + String(hour) + ") [" + String(millis()) + "]");
 
   if (wday < 0 || wday > 6)
     wday = 0;
@@ -468,67 +463,21 @@ void move_pointer(int wday, int hour)
   //Serial.print((String(left) + " , " + String(right) + "\n").c_str());
 
   int pos = int(left - (hour * divsPerHour));
-  Serial.println(("    " + String(localTime()) + ": Hour = " + String(hour) + " -> Pos = " + String(pos) + " [" + String(left) + " , " + String(right) + "]").c_str());
+  //Serial.println(("    " + String(localTime()) + ": Hour = " + String(hour) + " -> Pos = " + String(pos) + " [" + String(left) + " , " + String(right) + "]").c_str());
   servo.write(pos);
 
-  Serial.println("move_pointer() complete [" + String(millis()) + "]");
+  //Serial.println("move_pointer() complete [" + String(millis()) + "]");
 }
 
 void updateNTP()
 {
-  Serial.println("Updating time from NTP at [" + String(millis()) + "]");
+  //Serial.println("Updating time from NTP at [" + String(millis()) + "]");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   ntpUpdated = millis();
-  Serial.println("NTP date = " + String(localTime()) + " [" + String(millis()) + "]");
+  //Serial.println("NTP date = " + String(localTime()) + " [" + String(millis()) + "]");
 
   lcd.setCursor(0, 0);
   lcd.print("Updated NTP Time        ");
   lcd.setCursor(0, 1);
   lcd.print(String(localTime()));
-}
-
-char* localTime()
-{
-  memset(localTimeBuffer, 0, sizeof(localTimeBuffer));
-  struct tm t;
-  if (!getLocalTime(&t)) {
-    Serial.println("Failed to obtain time");
-    updateNTP();
-    return localTimeBuffer;
-  }
-
-  strftime(localTimeBuffer, sizeof(localTimeBuffer), "%c", &t);
-  return localTimeBuffer;
-}
-
-float convert_temp(float c)
-{
-#ifdef DISPLAY_CELSIUS
-  return c;
-#else
-  return c_to_f(c);
-#endif
-}
-
-float c_to_f(float c)
-{
-  return((c * 1.8) + 32);
-}
-
-float round_to_tenths(float val)
-{
-  double d = round((double)val * 10.0) / 10.0;
-  return float(d);
-}
-
-void(* resetFunc)(void) = 0;
-
-void to_xml(float temperature, float humidity, int co2, int lastSensorTimestamp, char *buf, int len)
-{
-  snprintf(buf, len - 1, "<xml millis=\"%lu\" ts=\"%d\"><temp_f>%0.2f</temp_f><temp_c>%0.2f</temp_c><humidity>%0.2f</humidity><co2>%d</co2></xml>", millis(), lastSensorTimestamp, c_to_f(temperature), temperature, humidity, co2);
-}
-
-void to_json(float temperature, float humidity, int co2, int lastSensorTimestamp, char *buf, int len)
-{
-  snprintf(buf, len - 1, "{\"temp_f\": %0.2f, \"temp_c\": %0.2f, \"humidity\": %0.2f, \"co2\": %d, \"timestamp\": %d, \"millis\": %lu, \"timestamp_str\": \"%s\"}", c_to_f(temperature), temperature, humidity, co2, lastSensorTimestamp, millis(), lastSensorLocaltime);
 }
