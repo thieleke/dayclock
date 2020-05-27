@@ -70,7 +70,7 @@ struct history_t
 
 history_t historyVals[HISTORY_COUNT];
 volatile int historyPos = HISTORY_COUNT - 1;
-volatile bool in_add_history  = false;
+volatile bool in_add_history = false;
 #endif
 
 void setup()
