@@ -48,13 +48,13 @@ history_t *get_next_history(int pos)
   return get_history(pos);  
 }
 
-int add_history(unsigned int timestamp, float temp_c, float humidity, unsigned int co2)
+int add_history(time_t timestamp, float temp_c, float humidity, unsigned int co2)
 {  
   if(in_add_history == true || inHistoryHandler == true)
     return historyPos;
   
   in_add_history = true;
-  Serial.printf("Adding History at %d: %0.2f, %0.2f, %u\n", historyPos, temp_c, humidity, co2);
+  Serial.printf("Adding History[%d]: %lu, %0.2f, %0.2f, %u\n", historyPos, timestamp, temp_c, humidity, co2);
 
   history_t *h;
   h = get_next_history();
