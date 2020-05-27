@@ -208,6 +208,9 @@ void httpChartHandler(AsyncWebServerRequest *request)
             chart.data.datasets[1].data = getTemperatureData();
             chart.data.datasets[2].data = getHumidityData();
             chart.update();
+
+            let i = Math.max(data.length, 1) - 1;
+            document.title = "Dayclock " + data[i][%d] + "°%s / " + data[i][4] + " ppm";
         }
 
         var ctx = document.getElementById('chart').getContext('2d');
@@ -375,7 +378,7 @@ void httpChartHandler(AsyncWebServerRequest *request)
 #endif
 
   char buf[10000];
-  snprintf(buf, sizeof(buf) - 1, html, tempIndex, tempUnit, tempUnit);
+  snprintf(buf, sizeof(buf) - 1, html, tempIndex, tempIndex, tempUnit, tempUnit, tempUnit);
   
   AsyncWebServerResponse *response = request->beginResponse(200, "text/html", buf);
   response->addHeader("Cache-Control", "no-cache");

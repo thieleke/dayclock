@@ -216,6 +216,7 @@ void setup()
 
 #ifdef ESP32
   Update.onProgress(update_print_progress);
+  WiFi.setSleep(false);  // https://github.com/me-no-dev/ESPAsyncWebServer/pull/743
 #endif
 
 #if HISTORY_COUNT
