@@ -1,6 +1,5 @@
 history_t *get_history()
 {
-  Serial.printf("get_history() - historyPos = %d\n", historyPos);
   return get_history(historyPos);
 }
 
@@ -9,24 +8,21 @@ history_t *get_history(int pos)
   if(pos < 0 || pos >= HISTORY_COUNT)
     pos = 0;
 
-  return &history[pos];
+  return &historyVals[pos];
 }
 
 history_t *get_current_history()
 {
-  Serial.println("get_current_history()");
   return get_history(historyPos);
 }
 
 history_t *get_previous_history()
 {
-  Serial.println("get_previous_history()");
   return get_previous_history(historyPos);
 }
 
 history_t *get_previous_history(int pos)
 {
-  Serial.printf("get_previous_history(%d)\n", pos);
   pos = pos - 1 < 0 ? (HISTORY_COUNT - 1) : pos - 1;  
   return get_history(pos);
 }
@@ -43,31 +39,33 @@ int get_next_index(int pos)
 
 history_t *get_next_history()
 {
-  Serial.println("get_next_history()");
   return get_next_history(historyPos);
 }
 
 history_t *get_next_history(int pos)
 {
-  Serial.printf("get_next_history(%d)\n", pos);
   pos = get_next_index(pos);
   return get_history(pos);  
 }
 
 int add_history(unsigned int timestamp, float temp_c, float humidity, unsigned int co2)
 {  
-  Serial.printf("!!! Adding history: historyPos = %d\n", historyPos);
+  if(in_add_history == true || inHistoryHandler == true)
+    return historyPos;
+  
+  in_add_history = true;
+  Serial.printf("Adding History at %d: %0.2f, %0.2f, %u\n", historyPos, temp_c, humidity, co2);
+
   history_t *h;
   h = get_next_history();
+  historyPos = get_next_index();
     
   h->timestamp = timestamp;
   h->temperature = temp_c;
   h->humidity = humidity;
   h->co2 = co2;
-  Serial.printf("historyPos = %d\n", historyPos);
-  Serial.printf("* add_history(): %lu\n", h->timestamp);
-  historyPos = get_next_index();
-  Serial.printf("historyPos is now %d !!!!!\n", historyPos);
+  
+  in_add_history = false;
   return historyPos;
 }
 

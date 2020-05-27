@@ -68,8 +68,9 @@ struct history_t
   unsigned int co2;  
 };
 
-history_t history[HISTORY_COUNT];
-int historyPos = HISTORY_COUNT - 1;
+history_t historyVals[HISTORY_COUNT];
+volatile int historyPos = HISTORY_COUNT - 1;
+volatile bool in_add_history = false;
 #endif
 
 void setup()
@@ -218,7 +219,7 @@ void setup()
 #endif
 
 #if HISTORY_COUNT
-  memset(history, 0, sizeof(history));
+  memset(historyVals, 0, sizeof(historyVals));
 #endif
 
   lcd.setCursor(0, 0);
@@ -244,19 +245,6 @@ void loop()
     getLocalTime(&t);
     move_pointer(t.tm_wday, t.tm_hour);
     Serial.println("---------------------------------------------------------------------");
-
-#if HISTORY_COUNT
-    // Ignore non-sensical sensor readings and try later
-    if(inHistoryHandler == false && lastSensorTimestamp != 0 || lastCO2 >= CO2_MIN && lastCO2 <= CO2_MAX)
-    {
-      // For the first update, just use pos = 0;
-      history_t *h = get_previous_history();
-      if(lastSensorTimestamp - h->timestamp >= HISTORY_INTERVAL_SEC)
-      {
-        add_history(lastSensorTimestamp, lastTemperature, lastHumidity, lastCO2);
-      }
-    }
-#endif    
   }
 
   // Update NTP every 6 hours
@@ -276,29 +264,29 @@ void print_sensors()
   int CO2;
   float t = 0.0, h = 0.0;
 
-  //Serial.println("print_sensors() [" + String(millis()) + "]");
+  Serial.println("print_sensors() [" + String(millis()) + "]");
 
   lastCO2 = CO2 = mhz19.getCO2();
-  //Serial.print("    CO2 (ppm): ");
-  //Serial.println(CO2);
+  Serial.print("    CO2 (ppm): ");
+  Serial.println(CO2);
 
   if (CO2 <= 0 || mhz19.errorCode != RESULT_OK)
   {
     co2Failures++;
-    //Serial.println("    MH-Z19B failure " + String(co2Failures) + " errorCode = " + String(mhz19.errorCode));
+    Serial.println("    MH-Z19B failure " + String(co2Failures) + " errorCode = " + String(mhz19.errorCode));
     mhz19.verify();
     if (mhz19.errorCode == RESULT_OK)
     {
       co2Failures = 0;
       CO2 = mhz19.getCO2();
-      //Serial.println("    MH-Z19B recovered");
+      Serial.println("    MH-Z19B recovered");
     }
     else
     {
       if (co2Failures >= 3)
       {
         co2Failures = 0;
-        //Serial.println("    Preforming a reset on CO2 sensor - error_code = " + String(mhz19.errorCode));
+        Serial.println("    Preforming a reset on CO2 sensor - error_code = " + String(mhz19.errorCode));
         mhz19.recoveryReset();
         delay(5000);
       }
@@ -314,20 +302,20 @@ void print_sensors()
 
   //Serial.print("    MH-Z19B Temperature (C): ");
   //Serial.println(String(mhz19.getTemperature()));
-  //Serial.print("    Min CO2: ");
-  //Serial.println(minCO2);
-  //Serial.print("    Max CO2: ");
-  //Serial.println(maxCO2);
+  Serial.print("    Min CO2: ");
+  Serial.println(minCO2);
+  Serial.print("    Max CO2: ");
+  Serial.println(maxCO2);
 
   // Get temperature event and print its value
   dht.temperature().getEvent(&event);
   t = event.temperature;
-  //Serial.println("    T: " + String(t) + " C / " + String(c_to_f(t)) + " F" );
+  Serial.println("    T: " + String(t) + " C / " + String(c_to_f(t)) + " F" );
 
   noTemp = isnan(t);
   if (noTemp)
   {
-    //Serial.println(F("    Error reading temperature!"));
+    Serial.println(F("    Error reading temperature!"));
     lcd.setCursor(0, 0);
     lcd.print("Error reading temperature            ");
   }
@@ -366,12 +354,12 @@ void print_sensors()
   // Get humidity event and print its value.
   dht.humidity().getEvent(&event);
   h = event.relative_humidity;
-  //Serial.println("    H: " + String(h) + "%");
+  Serial.println("    H: " + String(h) + "%");
 
   noHumidity = isnan(h);
   if (noHumidity)
   {
-    //Serial.println(F("    Error reading humidity!"));
+    Serial.println(F("    Error reading humidity!"));
     lcd.setCursor(0, 0);
     lcd.print("Error reading humidity                    ");
   }
@@ -405,6 +393,18 @@ void print_sensors()
 
     lastSensorTimestamp = time(NULL);
     strcpy(lastSensorLocaltime, localTime());
+
+#if HISTORY_COUNT
+    // Ignore non-sensical sensor readings and try later
+    if(lastSensorTimestamp != 0 && (lastCO2 >= CO2_MIN && lastCO2 <= CO2_MAX))
+    {
+      history_t *h = get_current_history();
+      if(lastSensorTimestamp - h->timestamp >= HISTORY_INTERVAL_SEC)
+      {
+        add_history(lastSensorTimestamp, lastTemperature, lastHumidity, lastCO2);
+      }
+    }
+#endif    
 
 #ifdef UDP_HOST_IP
     char buf[1024];
@@ -443,12 +443,12 @@ void print_sensors()
     loops = 0;
   }
 
-  //Serial.println("print_sensors() complete [" + String(millis()) + "]");
+  Serial.println("print_sensors() complete [" + String(millis()) + "]");
 }
 
 void move_pointer(int wday, int hour)
 {
-  //Serial.println("move_pointer(" + String(wday) + ", " + String(hour) + ") [" + String(millis()) + "]");
+  Serial.println("move_pointer(" + String(wday) + ", " + String(hour) + ") [" + String(millis()) + "]");
 
   if (wday < 0 || wday > 6)
     wday = 0;
@@ -463,18 +463,18 @@ void move_pointer(int wday, int hour)
   //Serial.print((String(left) + " , " + String(right) + "\n").c_str());
 
   int pos = int(left - (hour * divsPerHour));
-  //Serial.println(("    " + String(localTime()) + ": Hour = " + String(hour) + " -> Pos = " + String(pos) + " [" + String(left) + " , " + String(right) + "]").c_str());
+  Serial.println(("    " + String(localTime()) + ": Hour = " + String(hour) + " -> Pos = " + String(pos) + " [" + String(left) + " , " + String(right) + "]").c_str());
   servo.write(pos);
 
-  //Serial.println("move_pointer() complete [" + String(millis()) + "]");
+  Serial.println("move_pointer() complete [" + String(millis()) + "]");
 }
 
 void updateNTP()
 {
-  //Serial.println("Updating time from NTP at [" + String(millis()) + "]");
+  Serial.println("Updating time from NTP at [" + String(millis()) + "]");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   ntpUpdated = millis();
-  //Serial.println("NTP date = " + String(localTime()) + " [" + String(millis()) + "]");
+  Serial.println("NTP date = " + String(localTime()) + " [" + String(millis()) + "]");
 
   lcd.setCursor(0, 0);
   lcd.print("Updated NTP Time        ");
