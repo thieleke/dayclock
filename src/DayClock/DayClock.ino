@@ -57,19 +57,20 @@ int   lastCO2 = 0;
 time_t lastSensorTimestamp = 0;
 char  lastSensorLocaltime[30];
 size_t updateContentLen = 0;
+bool inHistoryHandler = false; 
 
 #if HISTORY_COUNT
-unsigned int historyUint[HISTORY_COUNT][2];
-float historyFloat[HISTORY_COUNT][2];
-int historyPos = 0;
-#define HISTORY_TIMESTAMP(i)       (historyUint[i][0])
-#define HISTORY_TEMPERATURE_F(i)   (c_to_f(historyFloat[i][0]))7
-#define HISTORY_TEMPERATURE_C(i)   (historyFloat[i][0])
-#define HISTORY_HUMIDITY(i)        (historyFloat[i][1])
-#define HISTORY_CO2(i)             (historyUint[i][1])
-#define HISTORY_CURRENT_INDEX      (historyPos)
-#define HISTORY_PREV_INDEX         (historyPos == 0 ? (HISTORY_COUNT - 1) : historyPos - 1)
-#define HISTORY_NEXT_INDEX         (historyPos >= (HISTORY_COUNT - 1) ? 0 : historyPos + 1)
+struct history_t
+{
+  time_t timestamp;
+  float temperature;
+  float humidity;
+  unsigned int co2;  
+};
+
+history_t historyVals[HISTORY_COUNT];
+volatile int historyPos = HISTORY_COUNT - 1;
+volatile bool in_add_history = false;
 #endif
 
 void setup()
@@ -218,8 +219,7 @@ void setup()
 #endif
 
 #if HISTORY_COUNT
-  memset(historyUint, 0, sizeof(historyUint));
-  memset(historyFloat, 0, sizeof(historyFloat));
+  memset(historyVals, 0, sizeof(historyVals));
 #endif
 
   lcd.setCursor(0, 0);
@@ -245,24 +245,6 @@ void loop()
     getLocalTime(&t);
     move_pointer(t.tm_wday, t.tm_hour);
     Serial.println("---------------------------------------------------------------------");
-
-#if HISTORY_COUNT
-  // Ignore non-sensical sensor readings and try later
-    if(lastTemperature != NO_DATA_LOW && lastTemperature != NO_DATA_HIGH && \
-       lastHumidity != NO_DATA_LOW && lastHumidity != NO_DATA_HIGH && \
-       lastCO2 >= CO2_MIN && lastCO2 <= CO2_MAX)
-    {
-      if(lastSensorTimestamp - HISTORY_TIMESTAMP(HISTORY_PREV_INDEX) >= HISTORY_INTERVAL_SEC)
-      {
-        HISTORY_TIMESTAMP(historyPos)     = lastSensorTimestamp;
-        HISTORY_TEMPERATURE_C(historyPos) = lastTemperature;
-        HISTORY_HUMIDITY(historyPos)      = lastHumidity;
-        HISTORY_CO2(historyPos)           = lastCO2;
-  
-        historyPos = HISTORY_NEXT_INDEX;
-      }
-    }
-#endif    
   }
 
   // Update NTP every 6 hours
@@ -271,6 +253,7 @@ void loop()
     updateNTP();
   }
 }
+
 
 void print_sensors()
 {
@@ -411,6 +394,18 @@ void print_sensors()
     lastSensorTimestamp = time(NULL);
     strcpy(lastSensorLocaltime, localTime());
 
+#if HISTORY_COUNT
+    // Ignore non-sensical sensor readings and try later
+    if(lastSensorTimestamp != 0 && (lastCO2 >= CO2_MIN && lastCO2 <= CO2_MAX))
+    {
+      history_t *h = get_current_history();
+      if(lastSensorTimestamp - h->timestamp >= HISTORY_INTERVAL_SEC)
+      {
+        add_history(lastSensorTimestamp, lastTemperature, lastHumidity, lastCO2);
+      }
+    }
+#endif    
+
 #ifdef UDP_HOST_IP
     char buf[1024];
     to_xml(t, h, CO2, lastSensorTimestamp, buf, sizeof(buf));
@@ -485,50 +480,4 @@ void updateNTP()
   lcd.print("Updated NTP Time        ");
   lcd.setCursor(0, 1);
   lcd.print(String(localTime()));
-}
-
-char* localTime()
-{
-  memset(localTimeBuffer, 0, sizeof(localTimeBuffer));
-  struct tm t;
-  if (!getLocalTime(&t)) {
-    Serial.println("Failed to obtain time");
-    updateNTP();
-    return localTimeBuffer;
-  }
-
-  strftime(localTimeBuffer, sizeof(localTimeBuffer), "%c", &t);
-  return localTimeBuffer;
-}
-
-float convert_temp(float c)
-{
-#ifdef DISPLAY_CELSIUS
-  return c;
-#else
-  return c_to_f(c);
-#endif
-}
-
-float c_to_f(float c)
-{
-  return((c * 1.8) + 32);
-}
-
-float round_to_tenths(float val)
-{
-  double d = round((double)val * 10.0) / 10.0;
-  return float(d);
-}
-
-void(* resetFunc)(void) = 0;
-
-void to_xml(float temperature, float humidity, int co2, int lastSensorTimestamp, char *buf, int len)
-{
-  snprintf(buf, len - 1, "<xml millis=\"%lu\" ts=\"%d\"><temp_f>%0.2f</temp_f><temp_c>%0.2f</temp_c><humidity>%0.2f</humidity><co2>%d</co2></xml>", millis(), lastSensorTimestamp, c_to_f(temperature), temperature, humidity, co2);
-}
-
-void to_json(float temperature, float humidity, int co2, int lastSensorTimestamp, char *buf, int len)
-{
-  snprintf(buf, len - 1, "{\"temp_f\": %0.2f, \"temp_c\": %0.2f, \"humidity\": %0.2f, \"co2\": %d, \"timestamp\": %d, \"millis\": %lu, \"timestamp_str\": \"%s\"}", c_to_f(temperature), temperature, humidity, co2, lastSensorTimestamp, millis(), lastSensorLocaltime);
 }
