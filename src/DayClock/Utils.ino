@@ -103,4 +103,37 @@ char* localTime()
   return localTimeBuffer;
 }
 
+bool wifi_connect()
+{
+  Serial.printf("wifi_connect() - status = %d\n", WiFi.status());
+  if(WiFi.status() == WL_CONNECTED)
+  {
+    digitalWrite(LED_BUILTIN, HIGH);
+    Serial.print("wifi_connect() - already connected");
+    Serial.println(WiFi.localIP());
+    return true;
+  }
+      
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);  // https://github.com/me-no-dev/ESPAsyncWebServer/pull/743
+  WiFi.begin(ssid, password);
+  for(int i=0; i<10; i++)
+  {
+    if(WiFi.status() != WL_CONNECTED)
+    {
+      Serial.print(".");
+      delay(500);
+      continue;
+    }
+
+    digitalWrite(LED_BUILTIN, HIGH);
+    Serial.println("\nwifi_connect() - connected");
+    Serial.println(WiFi.localIP());
+    return true;
+  }
+
+  digitalWrite(LED_BUILTIN, LOW);
+  return false;
+}  
+
 void(* resetFunc)(void) = 0;

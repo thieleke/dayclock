@@ -25,6 +25,7 @@
 #include <Wire.h>
 
 unsigned long ntpUpdated = 0;
+unsigned long wifiConnected = 0;
 char localTimeBuffer[30];
 AsyncWebServer webServer(80);
 AsyncUDP udp;
@@ -83,6 +84,10 @@ void setup()
   lcd.init();
   lcd.backlight();
 
+  // Built-in LED is used to indicate Wi-Fi connection status
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
+  
   // Servo initialization
   Serial.println("Attaching to servo");
   servo.attach(SERVO_PIN, SERVO_MIN, SERVO_MAX);
@@ -96,23 +101,21 @@ void setup()
   lcd.setCursor(0, 1);
   lcd.print(String(ssid) + "                    ");
   Serial.println("Connecting to Wi-Fi");
-
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED)
+  if(wifi_connect() == true)
   {
-    Serial.print(".");
-    delay(500);
+    wifiConnected = millis();
+    lcd.setCursor(0, 0);
+    lcd.print("Wi-Fi connected       ");
+    lcd.setCursor(0, 1);
+    lcd.print(WiFi.localIP().toString() + "               ");
   }
-  lcd.setCursor(0, 0);
-  lcd.print("Wi-Fi connected       ");
-  lcd.setCursor(0, 1);
-  lcd.print("                      ");
-  Serial.println("WiFi connected");
-  Serial.println(WiFi.localIP());
-
-  lcd.setCursor(0, 1);
-  lcd.print(WiFi.localIP().toString() + "               ");
+  else
+  {
+    lcd.setCursor(0, 0);
+    lcd.print("Wi-Fi unavailable       ");
+    lcd.setCursor(0, 1);
+    lcd.print("                      ");
+  }  
   delay(2000);
 
   updateNTP();
@@ -129,7 +132,7 @@ void setup()
 
   for (int i = 0; i < 8; i++)
   {
-    Serial.println(String(i) + " -> " + String(dayPos[i]));
+    Serial.printf("%d -> %d\n", i, dayPos[i]);
   }
 
   servo.write(dayPos[0]);
@@ -168,9 +171,11 @@ void setup()
 
 #ifdef UDP_HOST_IP
   // nc -u -l 1234
-  if (udp.connect(IPAddress(UDP_HOST_IP), UDP_HOST_PORT)) {
-    Serial.println("UDP connected");
-    udp.onPacket([](AsyncUDPPacket packet) {
+  if (udp.connect(IPAddress(UDP_HOST_IP), UDP_HOST_PORT)) 
+  {
+    Serial.println("UDP initialized");
+    udp.onPacket([](AsyncUDPPacket packet) 
+    {
       Serial.print("UDP Packet Type: ");
       Serial.print(packet.isBroadcast() ? "Broadcast" : packet.isMulticast() ? "Multicast" : "Unicast");
       Serial.print(", From: ");
@@ -186,12 +191,9 @@ void setup()
       Serial.print(", Data: ");
       Serial.write(packet.data(), packet.length());
       Serial.println();
-      //reply to the client
-
       packet.printf("Got %u bytes of data\n", packet.length());
-
     });
-    //Send unicast
+
     udp.print("Hello Server at " + String(localTime()) + " [" + String(millis()) + "] from " + WiFi.localIP().toString() + "\n");
     Serial.println(WiFi.localIP().toString());
   }
@@ -216,7 +218,6 @@ void setup()
 
 #ifdef ESP32
   Update.onProgress(update_print_progress);
-  WiFi.setSleep(false);  // https://github.com/me-no-dev/ESPAsyncWebServer/pull/743
 #endif
 
 #if HISTORY_COUNT
@@ -248,6 +249,21 @@ void loop()
     Serial.println("---------------------------------------------------------------------");
   }
 
+  // Ensure that we're connected to WiFi (if available) every 30 minutes
+  if(wifiConnected > 0 && (unsigned long)(ticks - wifiConnected) >= 30 * 60 * 1000)
+  {
+    if(wifi_connect() == true)
+    {
+      wifiConnected = ticks;
+    }
+    else
+    {
+      // Try again in 30 minutes
+      Serial.println("WiFi reconnected failed - retrying in 30 minutes");
+      wifiConnected = ticks + (30 * 60 * 1000);
+    }
+  }
+  
   // Update NTP every 6 hours
   if ((unsigned long)(ticks - ntpUpdated) >= 6 * 60 * 60 * 1000)
   {
@@ -412,6 +428,8 @@ void print_sensors()
     to_xml(t, h, CO2, lastSensorTimestamp, buf, sizeof(buf));
     udp.print(String(buf) + "\n");
 #endif
+
+    digitalWrite(LED_BUILTIN, WiFi.status() == WL_CONNECTED ? HIGH : LOW);
   }
 
   loops += 1;

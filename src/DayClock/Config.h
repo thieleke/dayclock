@@ -12,6 +12,7 @@ const int   daylightOffset_sec = 3600;            // Number of seconds offset fo
 
 #define SERVO_PIN  13
 #define DHT_PIN    14
+#define LED_BUILTIN 2
 
 // Uncomment the type of temperature sensor in use
 //#define DHT_TYPE    DHT11     // DHT 11
