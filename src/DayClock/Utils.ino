@@ -105,7 +105,7 @@ char* localTime()
 
 bool wifi_connect()
 {
-  Serial.printf("wifi_connect() - status = %d [%lu}\n", WiFi.status(), millis());
+  Serial.printf("wifi_connect() - status = %d [%lu]\n", WiFi.status(), millis());
   if (WiFi.status() == WL_CONNECTED)
   {
     wifiConnectedTicks = millis();    
