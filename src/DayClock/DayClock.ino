@@ -24,21 +24,22 @@
 #include <WiFi.h>
 #include <Wire.h>
 
-unsigned long ntpUpdated = 0;
-unsigned long wifiConnected = 0;
+#define NO_DATA_LOW -99999
+#define NO_DATA_HIGH 99999
+
+unsigned long ntpUpdatedTicks = 0;
+unsigned long wifiConnectedTicks = 0;
 char localTimeBuffer[30];
+#ifdef UDP_HOST_IP
+char udpBuffer[256];
+#endif
 AsyncWebServer webServer(80);
 AsyncUDP udp;
 Servo servo;
-LiquidCrystal_I2C lcd(LCD_I2C_ADDRESS, LCD_COLUMNS, LCD_ROWS);  // Defaults to I2C address 0x27 and 16x2 display
+LiquidCrystal_I2C lcd(LCD_I2C_ADDRESS, LCD_COLUMNS, LCD_ROWS);
 DHT_Unified dht(DHT_PIN, DHT_TYPE);
-#define NO_DATA_LOW -99999
-#define NO_DATA_HIGH 99999
 MHZ19 mhz19;
-#define BAUDRATE 9600                                      // Device to MH-Z19 Serial baudrate (should not be changed)
-HardwareSerial mySerial(MHZ19_SERIAL_PORT);                // Create device to MH-Z19 serial (Default: RX2/TX2)
-#define CO2_MIN  350
-#define CO2_MAX  4000
+HardwareSerial mhz19Serial(MHZ19_SERIAL_PORT);
 
 unsigned int delayMS;
 unsigned long sensorDelayTicks = 0;
@@ -83,10 +84,6 @@ void setup()
   // Initialize the LCD
   lcd.init();
   lcd.backlight();
-
-  // Built-in LED is used to indicate Wi-Fi connection status
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LOW);
   
   // Servo initialization
   Serial.println("Attaching to servo");
@@ -95,26 +92,16 @@ void setup()
   // Initialize DHT device
   dht.begin();
 
+  // Built-in LED is used to indicate Wi-Fi connection status
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
+
   // Connect to WiFi
-  lcd.setCursor(0, 0);
-  lcd.print("Connecting to        ");
-  lcd.setCursor(0, 1);
-  lcd.print(String(ssid) + "                    ");
-  Serial.println("Connecting to Wi-Fi");
-  if(wifi_connect() == true)
+  if(wifi_connect() == false)
   {
-    wifiConnected = millis();
-    lcd.setCursor(0, 0);
-    lcd.print("Wi-Fi connected       ");
-    lcd.setCursor(0, 1);
-    lcd.print(WiFi.localIP().toString() + "               ");
-  }
-  else
-  {
-    lcd.setCursor(0, 0);
-    lcd.print("Wi-Fi unavailable       ");
-    lcd.setCursor(0, 1);
-    lcd.print("                      ");
+    lcd_print("Wi-Fi unavailable", 0);
+    lcd_print("", 1);
+    wifiConnectedTicks = 0;
   }  
   delay(2000);
 
@@ -123,9 +110,9 @@ void setup()
 #ifdef DEMO
   for (int i = 0; i < 8; i++)
   {
-    lcd.setCursor(0, 0);
-    lcd.print(String(i) + " -> " + String(dayPos[i]) + "               ");
+    lcd_print(String(i) + " -> " + String(dayPos[i]), 0);
     servo.write(dayPos[i]);
+    yield();
     delay(1500);
   }
 #endif
@@ -161,8 +148,8 @@ void setup()
   Serial.println(F("------------------------------------"));
 
   // Initialize MHZ-19B device
-  mySerial.begin(BAUDRATE);
-  mhz19.begin(mySerial);
+  mhz19Serial.begin(MHZ19_BAUDRATE);
+  mhz19.begin(mhz19Serial);
   mhz19.autoCalibration();
 
   // Set delay between sensor readings based on sensor details
@@ -224,8 +211,8 @@ void setup()
   memset(historyVals, 0, sizeof(historyVals));
 #endif
 
-  lcd.setCursor(0, 0);
-  lcd.print("Starting...             ");
+  lcd_print("Starting...", 0);
+  lcd_print("", 1);
 }
 
 void loop()
@@ -241,7 +228,7 @@ void loop()
     sensorDelayTicks = ticks;
 
     // Update the LCD with temperature, humidity, and CO2
-    print_sensors();
+    update_sensors();
 
     struct tm t;
     getLocalTime(&t);
@@ -249,48 +236,45 @@ void loop()
     Serial.println("---------------------------------------------------------------------");
   }
 
-  // Ensure that we're connected to WiFi (if available) every 30 minutes
-  if(wifiConnected > 0 && (unsigned long)(ticks - wifiConnected) >= 30 * 60 * 1000)
+  // Ensure that we're connected to WiFi (if available) every 5 minutes
+  if(wifiConnectedTicks > 0 && (unsigned long)(ticks - wifiConnectedTicks) >= 5 * 60 * 1000)
   {
-    if(wifi_connect() == true)
+    if(wifi_connect() == false)
     {
-      wifiConnected = ticks;
-    }
-    else
-    {
-      // Try again in 30 minutes
-      Serial.println("WiFi reconnected failed - retrying in 30 minutes");
-      wifiConnected = ticks + (30 * 60 * 1000);
+      // Try again in 5 minutes
+      Serial.println("WiFi reconnected failed - retrying in 5 minutes");
+      wifiConnectedTicks = ticks + (5 * 60 * 1000);
     }
   }
   
   // Update NTP every 6 hours
-  if ((unsigned long)(ticks - ntpUpdated) >= 6 * 60 * 60 * 1000)
+  if ((unsigned long)(ticks - ntpUpdatedTicks) >= 6 * 60 * 60 * 1000)
   {
     updateNTP();
   }
 }
 
 
-void print_sensors()
+void update_sensors()
 {
   sensors_event_t event;
   bool noTemp = false;
   bool noHumidity = false;
+  bool noCO2 = false;
   bool showMinMax = loops > 0 && !(loops % 5);
   int CO2;
   float t = 0.0, h = 0.0;
 
-  Serial.println("print_sensors() [" + String(millis()) + "]");
+  Serial.printf("update_sensors() [%lu]\n", millis());
 
   lastCO2 = CO2 = mhz19.getCO2();
-  Serial.print("    CO2 (ppm): ");
-  Serial.println(CO2);
+  yield();
+  Serial.printf("    CO2 (ppm): %d\n", CO2);
 
   if (CO2 <= 0 || mhz19.errorCode != RESULT_OK)
   {
     co2Failures++;
-    Serial.println("    MH-Z19B failure " + String(co2Failures) + " errorCode = " + String(mhz19.errorCode));
+    Serial.printf("    MH-Z19B failure %d, errorCode = %d\n", co2Failures, mhz19.errorCode);
     mhz19.verify();
     if (mhz19.errorCode == RESULT_OK)
     {
@@ -303,11 +287,11 @@ void print_sensors()
       if (co2Failures >= 3)
       {
         co2Failures = 0;
-        Serial.println("    Preforming a reset on CO2 sensor - error_code = " + String(mhz19.errorCode));
+        Serial.printf("    Preforming a reset on CO2 sensor - error_code = %d", mhz19.errorCode);
         mhz19.recoveryReset();
-        delay(5000);
+        yield();
+        delay(1000);
       }
-      return;
     }
   }
 
@@ -316,7 +300,11 @@ void print_sensors()
     minCO2 = min(minCO2, CO2);
     maxCO2 = max(maxCO2, CO2);
   }
-
+  else
+  {
+    noCO2 = true;
+  }
+  
   //Serial.print("    MH-Z19B Temperature (C): ");
   //Serial.println(String(mhz19.getTemperature()));
   Serial.print("    Min CO2: ");
@@ -327,14 +315,14 @@ void print_sensors()
   // Get temperature event and print its value
   dht.temperature().getEvent(&event);
   t = event.temperature;
-  Serial.println("    T: " + String(t) + " C / " + String(c_to_f(t)) + " F" );
+  yield();  
+  Serial.printf("    T: %0.2f C / %0.2f F\n", t, c_to_f(t));
 
-  noTemp = isnan(t);
+  noTemp = isnan(t) || t < -40 || t > 125;
   if (noTemp)
   {
-    Serial.println(F("    Error reading temperature!"));
-    lcd.setCursor(0, 0);
-    lcd.print("Error reading temperature            ");
+    Serial.println("    Error reading temperature!");   
+    lcd_print("Error reading temperature", 0);
   }
   else
   {
@@ -364,21 +352,20 @@ void print_sensors()
       }
     }
 
-    lcd.setCursor(0, 0);
-    lcd.print(msg);
+    lcd_print(msg, 0);
   }
 
   // Get humidity event and print its value.
   dht.humidity().getEvent(&event);
+  yield();
   h = event.relative_humidity;
-  Serial.println("    H: " + String(h) + "%");
+  Serial.printf("    H: %0.2f%%\n", h);
 
-  noHumidity = isnan(h);
+  noHumidity = isnan(h) || h < 0 || h > 100;
   if (noHumidity)
   {
-    Serial.println(F("    Error reading humidity!"));
-    lcd.setCursor(0, 0);
-    lcd.print("Error reading humidity                    ");
+    Serial.println("    Error reading humidity");
+    lcd_print("Error reading humidity", 0);
   }
   else
   {
@@ -405,15 +392,14 @@ void print_sensors()
       showTempMinMax = !showTempMinMax;
     }
 
-    lcd.setCursor(0, 1);
-    lcd.print(msg);
+    lcd_print(msg, 1);
 
     lastSensorTimestamp = time(NULL);
-    strcpy(lastSensorLocaltime, localTime());
+    strncpy(lastSensorLocaltime, localTime(), sizeof(lastSensorLocaltime) - 1);
 
 #if HISTORY_COUNT
     // Ignore non-sensical sensor readings and try later
-    if(lastSensorTimestamp != 0 && (lastCO2 >= CO2_MIN && lastCO2 <= CO2_MAX))
+    if(lastSensorTimestamp != 0 && noTemp == false && noHumidity == false && noCO2 == false)
     {
       history_t *h = get_current_history();
       if(lastSensorTimestamp - h->timestamp >= HISTORY_INTERVAL_SEC)
@@ -423,10 +409,10 @@ void print_sensors()
     }
 #endif    
 
-#ifdef UDP_HOST_IP
-    char buf[1024];
-    to_xml(t, h, CO2, lastSensorTimestamp, buf, sizeof(buf));
-    udp.print(String(buf) + "\n");
+#ifdef UDP_HOST_IP    
+    to_xml(t, h, CO2, lastSensorTimestamp, udpBuffer, sizeof(udpBuffer));
+    udp.print(udpBuffer);
+    udp.print("\n");
 #endif
 
     digitalWrite(LED_BUILTIN, WiFi.status() == WL_CONNECTED ? HIGH : LOW);
@@ -456,18 +442,21 @@ void print_sensors()
       maxHumidity = NO_DATA_LOW;
     }
 
-    minCO2 = CO2_MAX;
-    maxCO2 = CO2_MIN;
-
+    if (!noCO2)
+    {
+      minCO2 = CO2_MAX;
+      maxCO2 = CO2_MIN;
+    }
+    
     loops = 0;
   }
 
-  Serial.println("print_sensors() complete [" + String(millis()) + "]");
+  Serial.printf("update_sensors() complete [%lu]\n", millis());
 }
 
 void move_pointer(int wday, int hour)
 {
-  Serial.println("move_pointer(" + String(wday) + ", " + String(hour) + ") [" + String(millis()) + "]");
+  Serial.printf("move_pointer(%d, %d) [%lu]\n", wday, hour, millis());
 
   if (wday < 0 || wday > 6)
     wday = 0;
@@ -482,21 +471,19 @@ void move_pointer(int wday, int hour)
   //Serial.print((String(left) + " , " + String(right) + "\n").c_str());
 
   int pos = int(left - (hour * divsPerHour));
-  Serial.println(("    " + String(localTime()) + ": Hour = " + String(hour) + " -> Pos = " + String(pos) + " [" + String(left) + " , " + String(right) + "]").c_str());
+  //Serial.printf("    %s: Hour = %d -> Pos = %d [%d, %d]\n", localTime(), hour, pos, left, right);
   servo.write(pos);
 
-  Serial.println("move_pointer() complete [" + String(millis()) + "]");
+  Serial.printf("move_pointer() complete [%lu]\n", millis());
 }
 
 void updateNTP()
 {
-  Serial.println("Updating time from NTP at [" + String(millis()) + "]");
+  Serial.printf("Updating time from NTP at [%lu]\n", millis());
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-  ntpUpdated = millis();
-  Serial.println("NTP date = " + String(localTime()) + " [" + String(millis()) + "]");
+  ntpUpdatedTicks = millis();
+  Serial.printf("NTP date = %s [%lu]\n", localTime(), millis());
 
-  lcd.setCursor(0, 0);
-  lcd.print("Updated NTP Time        ");
-  lcd.setCursor(0, 1);
-  lcd.print(String(localTime()));
+  lcd_print("Updated NTP Time", 0);
+  lcd_print(String(localTime()), 1);
 }

@@ -8,9 +8,20 @@ void to_json(float temperature, float humidity, int co2, int lastSensorTimestamp
   snprintf(buf, len - 1, "{\"temp_f\": %0.2f, \"temp_c\": %0.2f, \"humidity\": %0.2f, \"co2\": %d, \"timestamp\": %d, \"millis\": %lu, \"timestamp_str\": \"%s\"}", c_to_f(temperature), temperature, humidity, co2, lastSensorTimestamp, millis(), lastSensorLocaltime);
 }
 
+void log_start_request(AsyncWebServerRequest *request, const char *path)
+{
+  IPAddress addr = request->client()->remoteIP();
+  Serial.printf("HTTP request from %u.%u.%u.%u: %s [%lu]\n", addr[0], addr[1], addr[1], addr[2], path, millis());
+}
+
+void log_end_request(const char *path)
+{
+  Serial.printf("HTTP request complete: %s [%lu]\n", path, millis());
+}
+
 void httpRootHandler(AsyncWebServerRequest *request)
 {
-  Serial.println("HTTP request from " + request->client()->remoteIP().toString() + ": / [" + String(millis()) + "]");
+  log_start_request(request, "/");
 
   const char *html = R"(
 <html>
@@ -106,12 +117,12 @@ void httpRootHandler(AsyncWebServerRequest *request)
   response->addHeader("Cache-Control", "no-cache");
   request->send(response);
   
-  Serial.println("HTTP request complete: / [" + String(millis()) + "]");
+  log_end_request("/");
 }
 
 void httpXMLHandler(AsyncWebServerRequest *request)
 {
-  Serial.println("HTTP request from " + request->client()->remoteIP().toString() + ": /xml [" + String(millis()) + "]");
+  log_start_request(request, "/xml");
 
   char buf[1024];
   to_xml(lastTemperature, lastHumidity, lastCO2, lastSensorTimestamp, buf, sizeof(buf));
@@ -121,12 +132,12 @@ void httpXMLHandler(AsyncWebServerRequest *request)
   response->addHeader("Cache-Control", "no-cache");
   request->send(response);
     
-  Serial.println("HTTP request complete: /xml [" + String(millis()) + "]");
+  log_end_request("/xml");
 }
 
 void httpJSONHandler(AsyncWebServerRequest *request)
 {
-  Serial.println("HTTP request from " + request->client()->remoteIP().toString() + ": /json [" + String(millis()) + "]");
+  log_start_request(request, "/json");
 
   char buf[1024];
   to_json(lastTemperature, lastHumidity, lastCO2, lastSensorTimestamp, buf, sizeof(buf));
@@ -136,13 +147,13 @@ void httpJSONHandler(AsyncWebServerRequest *request)
   response->addHeader("Cache-Control", "no-cache");
   request->send(response);
 
-  Serial.println("HTTP request complete: /json [" + String(millis()) + "]");
+  log_end_request("/json");
 }
 
 #if HISTORY_COUNT
 void httpChartHandler(AsyncWebServerRequest *request)
 {
-  Serial.println("HTTP request from " + request->client()->remoteIP().toString() + ": /chart [" + String(millis()) + "]");
+  log_start_request(request, "/chart");
 
   const char *html = R"(
 <html>
@@ -384,12 +395,12 @@ void httpChartHandler(AsyncWebServerRequest *request)
   response->addHeader("Cache-Control", "no-cache");
   request->send(response);
   
-  Serial.println("HTTP request complete: /chart [" + String(millis()) + "]");
+  log_end_request("/chart");
 }
 
 void httpHistoryHandler(AsyncWebServerRequest *request)
 {
-  Serial.println("HTTP request from " + request->client()->remoteIP().toString() + ": /history [" + String(millis()) + "]");
+  log_start_request(request, "/history");
 
   // Returns a JSON list of [Timestamp, Temperature (F), Temperature (C), Humidity, CO2]
   AsyncResponseStream *response = request->beginResponseStream("application/json");
@@ -441,29 +452,33 @@ void httpHistoryHandler(AsyncWebServerRequest *request)
   request->send(response);
 
   
-  Serial.println("HTTP request complete: /history [" + String(millis()) + "]");
+  log_end_request("/history");
 }
 #endif
 
 void httpUpdateHandler(AsyncWebServerRequest *request)
 {
+  log_start_request(request, "/update");
+  
   const char *html = "<html><head><title>Firmware Update</title></head><body><form method='POST' action='/do_update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form></body></html>";
   AsyncWebServerResponse *response = request->beginResponse(200, "text/html", html);
   response->addHeader("Cache-Control", "no-cache");
   request->send(response);
+
+  log_end_request("/update");
 }
 
 void httpDoUpdateHandler(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) 
 {
+  log_start_request(request, "/do_update");
+  
   if (!index)
   {
     Serial.println("Update Starting");
     updateContentLen = request->contentLength();
-
-    lcd.setCursor(0, 0);
-    lcd.print("Updating                           ");
-    lcd.setCursor(0, 1);
-    lcd.print(String(updateContentLen) + " bytes        ");
+    
+    lcd_print("Updating", 0);
+    lcd_print(String(updateContentLen) + " bytes", 1);
            
     // if filename includes spiffs, update the spiffs partition
     int cmd = (filename.indexOf("spiffs") > -1) ? U_SPIFFS : U_FLASH;
@@ -509,14 +524,14 @@ void httpDoUpdateHandler(AsyncWebServerRequest *request, const String& filename,
       update_reboot();
     }
   }
+
+  log_end_request("/do_update");
 }
 
 void update_reboot()
 {
-  lcd.setCursor(0, 0);
-  lcd.print("Update Complete - Rebooting        ");
-  lcd.setCursor(0, 1);
-  lcd.print("                                   ");
+  lcd_print("Update Complete - Rebooting", 0);
+  lcd_print("", 1);
 
   Serial.println("Update complete");
   Serial.flush();
@@ -542,6 +557,8 @@ void update_print_progress(size_t prg, size_t sz)
 
 void httpFaviconHandler(AsyncWebServerRequest *request)
 {
+  log_start_request(request, "/favicon.ico");
+  
   const uint8_t iconData[283] PROGMEM = {
   0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
   0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10,
@@ -570,11 +587,15 @@ void httpFaviconHandler(AsyncWebServerRequest *request)
 };
   AsyncWebServerResponse *response = request->beginResponse_P(200, "image/x-icon", iconData, sizeof(iconData));
   request->send(response);
+
+  log_end_request("/favicon.ico");
 }
 
 #if HISTORY_COUNT
 void httpChartIconHandler(AsyncWebServerRequest *request)
 {
+  log_start_request(request, "/chart.png");
+
   const uint8_t iconData[1426] PROGMEM = {
   0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
   0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x20,
@@ -698,5 +719,7 @@ void httpChartIconHandler(AsyncWebServerRequest *request)
 };
   AsyncWebServerResponse *response = request->beginResponse_P(200, "image/png", iconData, sizeof(iconData));
   request->send(response);
+
+  log_end_request("/chart.png");
 }
 #endif

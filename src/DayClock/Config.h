@@ -28,7 +28,11 @@ const int dayPos[8] = {180, 159, 133, 107, 80,  51,  26,  0};
 #define SERVO_MAX 3250
 
 #define MHZ19_SERIAL_PORT 2   // RX2/TX2
+#define MHZ19_BAUDRATE 9600   // Device to MH-Z19 Serial baudrate (should not be changed)
+#define CO2_MIN  350
+#define CO2_MAX  4000
 
+// Defaults to I2C address 0x27 and 16x2 display
 #define LCD_I2C_ADDRESS 0x27
 #define LCD_COLUMNS 16
 #define LCD_ROWS 2
