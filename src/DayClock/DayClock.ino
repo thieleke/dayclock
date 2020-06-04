@@ -267,7 +267,7 @@ void update_sensors()
 
   Serial.printf("update_sensors() [%lu]\n", millis());
 
-  lastCO2 = CO2 = mhz19.getCO2();
+  CO2 = mhz19.getCO2();
   yield();
   Serial.printf("    CO2 (ppm): %d\n", CO2);
 
@@ -287,7 +287,7 @@ void update_sensors()
       if (co2Failures >= 3)
       {
         co2Failures = 0;
-        Serial.printf("    Preforming a reset on CO2 sensor - error_code = %d", mhz19.errorCode);
+        Serial.printf("    Preforming a reset on CO2 sensor - error_code = %d [%lu]", mhz19.errorCode, millis());
         mhz19.recoveryReset();
         yield();
         delay(1000);
@@ -297,6 +297,7 @@ void update_sensors()
 
   if (CO2 >= CO2_MIN && CO2 <= CO2_MAX)
   {
+    lastCO2 = CO2;
     minCO2 = min(minCO2, CO2);
     maxCO2 = max(maxCO2, CO2);
   }
@@ -357,8 +358,8 @@ void update_sensors()
 
   // Get humidity event and print its value.
   dht.humidity().getEvent(&event);
-  yield();
   h = event.relative_humidity;
+  yield();
   Serial.printf("    H: %0.2f%%\n", h);
 
   noHumidity = isnan(h) || h < 0 || h > 100;
@@ -393,33 +394,32 @@ void update_sensors()
     }
 
     lcd_print(msg, 1);
+  }
 
+  // Ignore errored sensor readings and try later
+  if(!noTemp && !noHumidity && !noCO2)
+  {
     lastSensorTimestamp = time(NULL);
     strncpy(lastSensorLocaltime, localTime(), sizeof(lastSensorLocaltime) - 1);
-
+  
 #if HISTORY_COUNT
-    // Ignore non-sensical sensor readings and try later
-    if(lastSensorTimestamp != 0 && noTemp == false && noHumidity == false && noCO2 == false)
+    history_t *history = get_current_history();
+    if(lastSensorTimestamp - history->timestamp >= HISTORY_INTERVAL_SEC)
     {
-      history_t *h = get_current_history();
-      if(lastSensorTimestamp - h->timestamp >= HISTORY_INTERVAL_SEC)
-      {
-        add_history(lastSensorTimestamp, lastTemperature, lastHumidity, lastCO2);
-      }
+      add_history(lastSensorTimestamp, lastTemperature, lastHumidity, lastCO2);
     }
 #endif    
-
-#ifdef UDP_HOST_IP    
+    
+#ifdef UDP_HOST_IP
     to_xml(t, h, CO2, lastSensorTimestamp, udpBuffer, sizeof(udpBuffer));
     udp.print(udpBuffer);
     udp.print("\n");
 #endif
-
-    digitalWrite(LED_BUILTIN, WiFi.status() == WL_CONNECTED ? HIGH : LOW);
   }
 
-  loops += 1;
-  if (loops >= monitoringEndLoops)
+  digitalWrite(LED_BUILTIN, WiFi.status() == WL_CONNECTED ? HIGH : LOW);
+
+  if (++loops >= monitoringEndLoops)
   {
     // Reset the min/max values and loop count
     if (!noTemp)

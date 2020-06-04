@@ -11,7 +11,7 @@ void to_json(float temperature, float humidity, int co2, int lastSensorTimestamp
 void log_start_request(AsyncWebServerRequest *request, const char *path)
 {
   IPAddress addr = request->client()->remoteIP();
-  Serial.printf("HTTP request from %u.%u.%u.%u: %s [%lu]\n", addr[0], addr[1], addr[1], addr[2], path, millis());
+  Serial.printf("HTTP request from %u.%u.%u.%u: %s [%lu]\n", addr[0], addr[1], addr[2], addr[3], path, millis());
 }
 
 void log_end_request(const char *path)
