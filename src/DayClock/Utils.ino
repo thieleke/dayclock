@@ -162,3 +162,13 @@ void lcd_print(String msg, int line)
   lcd.setCursor(0, line);
   lcd.print(msg.c_str());
 }
+
+void log_free_memory()
+{
+  log_free_memory("MEMORY");
+}
+
+void log_free_memory(const char *msg)
+{
+  Serial.printf("%s: Free Heap = %d, Max Available Heap = %d\n", msg, ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+}
