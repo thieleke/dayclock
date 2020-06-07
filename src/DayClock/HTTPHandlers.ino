@@ -443,7 +443,7 @@ void httpHistoryHandler(AsyncWebServerRequest *request)
     return;
   }
   
-  unsigned int minTimestamp = 0;
+  time_t minTimestamp = 0;
   int minPos = 0;
   
   // Find the initial position based on the lowest timestamp
