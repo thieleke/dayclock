@@ -23,7 +23,7 @@ void httpRootHandler(AsyncWebServerRequest *request)
 {
   log_start_request(request, "/");
 
-  const char *html = R"(
+  static const char *html = R"(
 <html>
    <head>
         <meta charset='UTF-8'>
@@ -128,7 +128,6 @@ void httpXMLHandler(AsyncWebServerRequest *request)
   to_xml(lastTemperature, lastHumidity, lastCO2, lastSensorTimestamp, buf, sizeof(buf));
 
   AsyncWebServerResponse *response = request->beginResponse(200, "application/xml", buf);
-  response->addHeader("Access-Control-Allow-Origin", "*");
   response->addHeader("Cache-Control", "no-cache");
   request->send(response);
     
@@ -143,7 +142,6 @@ void httpJSONHandler(AsyncWebServerRequest *request)
   to_json(lastTemperature, lastHumidity, lastCO2, lastSensorTimestamp, buf, sizeof(buf));
 
   AsyncWebServerResponse *response = request->beginResponse(200, "application/json", buf);
-  response->addHeader("Access-Control-Allow-Origin", "*");
   response->addHeader("Cache-Control", "no-cache");
   request->send(response);
 
@@ -155,7 +153,7 @@ void httpChartHandler(AsyncWebServerRequest *request)
 {
   log_start_request(request, "/chart");
 
-  const char *html = R"(
+  static const char *html = R"(
 <html>
 <head>
     <title>Dayclock - History Chart</title>
@@ -398,27 +396,60 @@ void httpChartHandler(AsyncWebServerRequest *request)
   log_end_request("/chart");
 }
 
+volatile unsigned long _historyStartTicks = 0;
+volatile static int _historyPos = -1;
+volatile static int _historyChunkCount = 0;
+volatile static bool _historyDone = false;
+
+bool isHistoryBusy()
+{
+  // Unblock after 10 seconds
+  if(_historyStartTicks > 0 && (unsigned long)(millis() - _historyStartTicks) >= 10000)
+  {
+    Serial.println("isHistoryBusy - unblocking");
+    _historyStartTicks = 0;
+  }
+  
+  return in_add_history || _historyStartTicks > 0;
+}
+
+bool setHistoryBusy(bool busy)
+{
+  if(busy && isHistoryBusy())
+    return(false);
+
+  if(busy)
+  { 
+    _historyStartTicks = millis();
+  }
+  else
+  {
+    _historyStartTicks = 0;
+  }
+
+  return(true);
+}
+
 void httpHistoryHandler(AsyncWebServerRequest *request)
 {
+  log_free_memory("httpHistoryHandler() start");
   log_start_request(request, "/history");
 
-  // Returns a JSON list of [Timestamp, Temperature (F), Temperature (C), Humidity, CO2]
-  AsyncResponseStream *response = request->beginResponseStream("application/json");
-  response->addHeader("Access-Control-Allow-Origin", "*");
-  response->addHeader("Cache-Control", "no-cache");
-  response->print("[");
-
-  inHistoryHandler = true;
-  bool hasOutput = false;
-  history_t *h;
-  int pos = 0;
+  if(!setHistoryBusy(true))
+  {
+    Serial.println("httpHistoryHandler - busy");
+    delay(500);
+    request->redirect("/history?ms=" + String(millis())); 
+    return;
+  }
+  
   unsigned int minTimestamp = 0;
   int minPos = 0;
   
   // Find the initial position based on the lowest timestamp
   for(int i=0; i<HISTORY_COUNT; i++)
   {
-    h = get_history(i);
+    history_t *h = get_history(i);
     if(h->timestamp == 0)
       break;
 
@@ -429,30 +460,69 @@ void httpHistoryHandler(AsyncWebServerRequest *request)
     }
   }
 
-  pos = minPos;
+  _historyChunkCount = 0;
+  _historyPos = minPos;
+  _historyDone = false;
 
-  for(int i=0; i<HISTORY_COUNT; i++)
-  {
-    h = get_history(pos);
-    if(h->timestamp == 0)
-      break;
-
-    if(hasOutput == true)
-      response->print(",");
-      
-    response->printf("[%lu,%0.1f,%0.1f,%0.1f,%u]", h->timestamp, round_to_tenths(c_to_f(h->temperature)), round_to_tenths(h->temperature), round_to_tenths(h->humidity), h->co2);
-    hasOutput = true;  
-
-    pos = get_next_index(pos);
-  }
-  
-  inHistoryHandler = false;
-  
-  response->print("]");
+  AsyncWebServerResponse *response = request->beginChunkedResponse("application/json", get_history_data_callback);
+  response->addHeader("Cache-Control", "no-cache");
   request->send(response);
 
-  
+  log_free_memory("httpHistoryHandler() end");
   log_end_request("/history");
+}
+
+size_t get_history_data_callback(uint8_t *buffer, size_t maxLen, size_t index)
+{ 
+  Serial.printf("get_history_data(%d, %d) - _historyDone = %s, _historyPos = %d  [%lu]\n", maxLen, index, _historyDone ? "true" : "false", _historyPos, millis());
+
+  if(_historyDone)
+  {
+    setHistoryBusy(false);
+    return 0;
+  }
+
+  history_t *h = get_history(_historyPos);
+  if(_historyChunkCount++ >= HISTORY_COUNT || h->timestamp == 0)
+  {    
+    // Set _historyDone so that the next callback will return 0, ending the chunked request
+    Serial.printf("get_history_data() - done [%lu]\n", millis());
+    memcpy(buffer, "]", 1);
+    _historyDone = true;
+    return 1;
+  }
+
+  const size_t maxItemSize = 38;
+  const size_t maxCount = maxLen / maxItemSize;
+  char outputBuf[(maxCount * maxItemSize) + 1];
+  memset(outputBuf, 0, sizeof(outputBuf));
+  size_t totalBytes = 0;
+
+  for(size_t i=0; i<maxCount; i++)
+  {
+    char tmp[38];
+    if(index > 0 || i > 0)
+    {
+      snprintf(tmp, sizeof(tmp) - 1, ",[%lu,%0.1f,%0.1f,%0.1f,%u]", h->timestamp, round_to_tenths(c_to_f(h->temperature)), round_to_tenths(h->temperature), round_to_tenths(h->humidity), h->co2);
+    }
+    else
+    {
+      snprintf(tmp, sizeof(tmp) - 1, "[[%lu,%0.1f,%0.1f,%0.1f,%u]", h->timestamp, round_to_tenths(c_to_f(h->temperature)), round_to_tenths(h->temperature), round_to_tenths(h->humidity), h->co2);
+    }
+
+    strcat(outputBuf, tmp);
+    totalBytes += strlen(tmp);
+
+    _historyPos = get_next_index(_historyPos);
+    h = get_history(_historyPos);
+    if(h->timestamp == 0)
+      break;
+  }
+
+  memcpy(buffer, outputBuf, totalBytes);
+
+  Serial.printf("get_history_data() - returning %u bytes [%lu]\n", totalBytes, millis());
+  return totalBytes;
 }
 #endif
 
@@ -559,7 +629,7 @@ void httpFaviconHandler(AsyncWebServerRequest *request)
 {
   log_start_request(request, "/favicon.ico");
   
-  const uint8_t iconData[283] PROGMEM = {
+  static const uint8_t iconData[283] PROGMEM = {
   0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
   0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10,
   0x08, 0x04, 0x00, 0x00, 0x00, 0xB5, 0xFA, 0x37, 0xEA, 0x00, 0x00, 0x00,
@@ -596,7 +666,7 @@ void httpChartIconHandler(AsyncWebServerRequest *request)
 {
   log_start_request(request, "/chart.png");
 
-  const uint8_t iconData[1426] PROGMEM = {
+  static const uint8_t iconData[1426] PROGMEM = {
   0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
   0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x20,
   0x08, 0x06, 0x00, 0x00, 0x00, 0x73, 0x7A, 0x7A, 0xF4, 0x00, 0x00, 0x00,

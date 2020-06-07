@@ -58,8 +58,8 @@ float lastHumidity = 0;
 int   lastCO2 = 0;
 time_t lastSensorTimestamp = 0;
 char  lastSensorLocaltime[30];
+int lastPointerPos = -1;
 size_t updateContentLen = 0;
-bool inHistoryHandler = false; 
 
 #if HISTORY_COUNT
 struct history_t
@@ -79,14 +79,16 @@ void setup()
 {
   Serial.begin(115200);
   Serial.println();
-  Serial.println("Booted");
+  Serial.println(F("Booted"));
 
-  // Initialize the LCD
+  log_free_memory("setup() begin");
+  
+  // Initialize the LCD  
   lcd.init();
   lcd.backlight();
   
   // Servo initialization
-  Serial.println("Attaching to servo");
+  Serial.println(F("Attaching to servo"));
   servo.attach(SERVO_PIN, SERVO_MIN, SERVO_MAX);
 
   // Initialize DHT device
@@ -99,7 +101,7 @@ void setup()
   // Connect to WiFi
   if(wifi_connect() == false)
   {
-    lcd_print("Wi-Fi unavailable", 0);
+    lcd_print(F("Wi-Fi unavailable"), 0);
     lcd_print("", 1);
     wifiConnectedTicks = 0;
   }  
@@ -113,7 +115,7 @@ void setup()
     lcd_print(String(i) + " -> " + String(dayPos[i]), 0);
     servo.write(dayPos[i]);
     yield();
-    delay(1500);
+    delay(750);
   }
 #endif
 
@@ -160,22 +162,22 @@ void setup()
   // nc -u -l 1234
   if (udp.connect(IPAddress(UDP_HOST_IP), UDP_HOST_PORT)) 
   {
-    Serial.println("UDP initialized");
+    Serial.println(F("UDP initialized"));
     udp.onPacket([](AsyncUDPPacket packet) 
     {
-      Serial.print("UDP Packet Type: ");
+      Serial.print(F("UDP Packet Type: "));
       Serial.print(packet.isBroadcast() ? "Broadcast" : packet.isMulticast() ? "Multicast" : "Unicast");
-      Serial.print(", From: ");
+      Serial.print(F(", From: "));
       Serial.print(packet.remoteIP());
-      Serial.print(":");
+      Serial.print(F(":"));
       Serial.print(packet.remotePort());
-      Serial.print(", To: ");
+      Serial.print(F(", To: "));
       Serial.print(packet.localIP());
-      Serial.print(":");
+      Serial.print(F(":"));
       Serial.print(packet.localPort());
-      Serial.print(", Length: ");
+      Serial.print(F(", Length: "));
       Serial.print(packet.length());
-      Serial.print(", Data: ");
+      Serial.print(F(", Data: "));
       Serial.write(packet.data(), packet.length());
       Serial.println();
       packet.printf("Got %u bytes of data\n", packet.length());
@@ -188,6 +190,8 @@ void setup()
   udp = NULL;
 #endif
 
+  log_free_memory("setup() before webServer");
+  
   webServer.on("/",            HTTP_GET,  httpRootHandler);
   webServer.on("/xml",         HTTP_GET,  httpXMLHandler);
   webServer.on("/json",        HTTP_GET,  httpJSONHandler);
@@ -201,8 +205,12 @@ void setup()
   webServer.on("/do_update",   HTTP_POST, [](AsyncWebServerRequest * request) {},
                                           [](AsyncWebServerRequest * request, const String & filename, size_t index, uint8_t *data, size_t len, bool final) {
                                                httpDoUpdateHandler(request, filename, index, data, len, final); });
+
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
   webServer.begin();
 
+  log_free_memory("setup() after webServer");
+  
 #ifdef ESP32
   Update.onProgress(update_print_progress);
 #endif
@@ -211,8 +219,10 @@ void setup()
   memset(historyVals, 0, sizeof(historyVals));
 #endif
 
-  lcd_print("Starting...", 0);
+  lcd_print(F("Starting..."), 0);
   lcd_print("", 1);
+
+  log_free_memory("After setup()");
 }
 
 void loop()
@@ -222,7 +232,6 @@ void loop()
     return;
 
   const unsigned long ticks = millis();
-
   if ((unsigned long)(ticks - sensorDelayTicks) >= delayMS)
   {
     sensorDelayTicks = ticks;
@@ -233,7 +242,7 @@ void loop()
     struct tm t;
     getLocalTime(&t);
     move_pointer(t.tm_wday, t.tm_hour);
-    Serial.println("---------------------------------------------------------------------");
+    Serial.println(F("---------------------------------------------------------------------"));
   }
 
   // Ensure that we're connected to WiFi (if available) every 5 minutes
@@ -242,7 +251,7 @@ void loop()
     if(wifi_connect() == false)
     {
       // Try again in 5 minutes
-      Serial.println("WiFi reconnected failed - retrying in 5 minutes");
+      Serial.println(F("WiFi reconnected failed - retrying in 5 minutes"));
       wifiConnectedTicks = ticks + (5 * 60 * 1000);
     }
   }
@@ -252,6 +261,8 @@ void loop()
   {
     updateNTP();
   }
+
+  delay(100);
 }
 
 
@@ -266,7 +277,8 @@ void update_sensors()
   float t = 0.0, h = 0.0;
 
   Serial.printf("update_sensors() [%lu]\n", millis());
-
+  //log_free_memory("update_sensors() start");
+  
   CO2 = mhz19.getCO2();
   yield();
   Serial.printf("    CO2 (ppm): %d\n", CO2);
@@ -280,7 +292,8 @@ void update_sensors()
     {
       co2Failures = 0;
       CO2 = mhz19.getCO2();
-      Serial.println("    MH-Z19B recovered");
+      yield();
+      Serial.println(F("    MH-Z19B recovered"));
     }
     else
     {
@@ -290,7 +303,7 @@ void update_sensors()
         Serial.printf("    Preforming a reset on CO2 sensor - error_code = %d [%lu]", mhz19.errorCode, millis());
         mhz19.recoveryReset();
         yield();
-        delay(1000);
+        delay(250);
       }
     }
   }
@@ -305,14 +318,16 @@ void update_sensors()
   {
     noCO2 = true;
   }
-  
-  //Serial.print("    MH-Z19B Temperature (C): ");
-  //Serial.println(String(mhz19.getTemperature()));
-  Serial.print("    Min CO2: ");
-  Serial.println(minCO2);
-  Serial.print("    Max CO2: ");
-  Serial.println(maxCO2);
 
+  /*
+  Serial.print(F("    MH-Z19B Temperature (C): "));
+  Serial.println(String(mhz19.getTemperature()));
+  Serial.print(F("    Min CO2: "));
+  Serial.println(minCO2);
+  Serial.print(F("    Max CO2: "));
+  Serial.println(maxCO2);
+  */
+  
   // Get temperature event and print its value
   dht.temperature().getEvent(&event);
   t = event.temperature;
@@ -322,8 +337,8 @@ void update_sensors()
   noTemp = isnan(t) || t < -40 || t > 125;
   if (noTemp)
   {
-    Serial.println("    Error reading temperature!");   
-    lcd_print("Error reading temperature", 0);
+    Serial.println(F("    Error reading temperature!"));   
+    lcd_print(F("Error reading temperature"), 0);
   }
   else
   {
@@ -365,8 +380,8 @@ void update_sensors()
   noHumidity = isnan(h) || h < 0 || h > 100;
   if (noHumidity)
   {
-    Serial.println("    Error reading humidity");
-    lcd_print("Error reading humidity", 0);
+    Serial.println(F("    Error reading humidity"));
+    lcd_print(F("Error reading humidity"), 0);
   }
   else
   {
@@ -396,6 +411,8 @@ void update_sensors()
     lcd_print(msg, 1);
   }
 
+  delay(10);
+  
   // Ignore errored sensor readings and try later
   if(!noTemp && !noHumidity && !noCO2)
   {
@@ -451,6 +468,7 @@ void update_sensors()
     loops = 0;
   }
 
+  //log_free_memory("update_sensors() complete");
   Serial.printf("update_sensors() complete [%lu]\n", millis());
 }
 
@@ -466,14 +484,15 @@ void move_pointer(int wday, int hour)
   int left = dayPos[wday];
   int right = dayPos[wday + 1];
   float divsPerHour = (left - right) / 24.0;
-
-  //Serial.print(("wday = " + String(wday) + "\n").c_str());
-  //Serial.print((String(left) + " , " + String(right) + "\n").c_str());
-
   int pos = int(left - (hour * divsPerHour));
-  //Serial.printf("    %s: Hour = %d -> Pos = %d [%d, %d]\n", localTime(), hour, pos, left, right);
-  servo.write(pos);
-
+  
+  if(lastPointerPos != pos)
+  {  
+    Serial.printf("    %s: Hour = %d -> Pos = %d [%d, %d]\n", localTime(), hour, pos, left, right);
+    servo.write(pos);
+    lastPointerPos = pos;
+  }
+  
   Serial.printf("move_pointer() complete [%lu]\n", millis());
 }
 
