@@ -403,8 +403,8 @@ volatile static bool _historyDone = false;
 
 bool isHistoryBusy()
 {
-  // Unblock after 10 seconds
-  if(_historyStartTicks > 0 && (unsigned long)(millis() - _historyStartTicks) >= 10000)
+  // Unblock after 5 seconds
+  if(_historyStartTicks != 0 && (unsigned long)(millis() - _historyStartTicks) >= 5000)
   {
     Serial.println("isHistoryBusy - unblocking");
     _historyStartTicks = 0;
@@ -438,7 +438,7 @@ void httpHistoryHandler(AsyncWebServerRequest *request)
   if(!setHistoryBusy(true))
   {
     Serial.println("httpHistoryHandler - busy");
-    delay(500);
+    delay(100);
     request->redirect("/history?ms=" + String(millis())); 
     return;
   }
@@ -483,14 +483,6 @@ size_t get_history_data_callback(uint8_t *buffer, size_t maxLen, size_t index)
   }
 
   history_t *h = get_history(_historyPos);
-  if(_historyChunkCount++ >= HISTORY_COUNT || h->timestamp == 0)
-  {    
-    // Set _historyDone so that the next callback will return 0, ending the chunked request
-    Serial.printf("get_history_data() - done [%lu]\n", millis());
-    memcpy(buffer, "]", 1);
-    _historyDone = true;
-    return 1;
-  }
 
   const size_t maxItemSize = 38;
   const size_t maxCount = maxLen / maxItemSize;
@@ -515,8 +507,15 @@ size_t get_history_data_callback(uint8_t *buffer, size_t maxLen, size_t index)
 
     _historyPos = get_next_index(_historyPos);
     h = get_history(_historyPos);
-    if(h->timestamp == 0)
+    if(h->timestamp == 0 || ++_historyChunkCount >= HISTORY_COUNT)
+    {
+       // Set _historyDone so that the next callback will return 0, ending the chunked request    
+      Serial.printf("get_history_data() - done [%lu]\n", millis());   
+      strcat(outputBuf, "]");
+      totalBytes += 1;
+      _historyDone = true;
       break;
+    }
   }
 
   memcpy(buffer, outputBuf, totalBytes);

@@ -23,6 +23,7 @@
 #include <Update.h>
 #include <WiFi.h>
 #include <Wire.h>
+#include <esp_task_wdt.h>
 
 #define NO_DATA_LOW -99999
 #define NO_DATA_HIGH 99999
@@ -81,6 +82,8 @@ void setup()
   Serial.println();
   Serial.println(F("Booted"));
 
+  //esp_task_wdt_init(5, false);
+  
   log_free_memory("setup() begin");
   
   // Initialize the LCD  
@@ -238,11 +241,13 @@ void loop()
 
     // Update the LCD with temperature, humidity, and CO2
     update_sensors();
-
+    yield();
+    
     struct tm t;
     getLocalTime(&t);
     move_pointer(t.tm_wday, t.tm_hour);
     Serial.println(F("---------------------------------------------------------------------"));
+    delay(10);
   }
 
   // Ensure that we're connected to WiFi (if available) every 5 minutes
@@ -426,7 +431,7 @@ void update_sensors()
       add_history(lastSensorTimestamp, lastTemperature, lastHumidity, lastCO2);
     }
 #endif    
-    
+
 #ifdef UDP_HOST_IP
     to_xml(t, h, CO2, lastSensorTimestamp, udpBuffer, sizeof(udpBuffer));
     udp.print(udpBuffer);
