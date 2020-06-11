@@ -491,16 +491,16 @@ size_t get_history_data_callback(uint8_t *buffer, size_t maxLen, size_t index)
   size_t totalBytes = 0;
 
   for(size_t i=0; i<maxCount; i++)
-  {
-    char tmp[38];
-    if(index > 0 || i > 0)
-    {
-      snprintf(tmp, sizeof(tmp) - 1, ",[%lu,%0.1f,%0.1f,%0.1f,%u]", h->timestamp, round_to_tenths(c_to_f(h->temperature)), round_to_tenths(h->temperature), round_to_tenths(h->humidity), h->co2);
-    }
-    else
-    {
-      snprintf(tmp, sizeof(tmp) - 1, "[[%lu,%0.1f,%0.1f,%0.1f,%u]", h->timestamp, round_to_tenths(c_to_f(h->temperature)), round_to_tenths(h->temperature), round_to_tenths(h->humidity), h->co2);
-    }
+  {    
+    char tmp[maxItemSize + 1];
+    const char prefix = index > 0 || i > 0 ? ',' : '[';
+    
+#if DH_SENSOR_TYPE == DHT_SENSOR_TYPE
+    // Round lower accuracy sensors to one decimal digit
+    snprintf(tmp, sizeof(tmp), "%c[%lu,%0.1f,%0.1f,%0.1f,%u]", prefix, h->timestamp, round_to_tenths(c_to_f(h->temperature)), round_to_tenths(h->temperature), round_to_tenths(h->humidity), h->co2);
+#else
+    snprintf(tmp, sizeof(tmp), "%c[%lu,%0.2f,%0.2f,%0.1f,%u]", prefix, h->timestamp, c_to_f(h->temperature), h->temperature, round_to_tenths(h->humidity), h->co2);
+#endif
 
     strcat(outputBuf, tmp);
     totalBytes += strlen(tmp);

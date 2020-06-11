@@ -1,5 +1,4 @@
-#ifndef DAYCLOCK_CONFIG_H
-#define DAYCLOCK_CONFIG_H
+#pragma once
 
 //#define DISPLAY_CELSIUS                         // Uncomment if you want the LCD and HTTP displays to default to Celsius temperature instead of Fahrenheit
 #define UDP_HOST_IP            192,168,0,1        // IP address, comma separated (eg: 192,168,0,1), if you want to receive UDP push messages.
@@ -15,9 +14,11 @@ const int   daylightOffset_sec = 3600;            // Number of seconds offset fo
 #define LED_BUILTIN 2
 
 // Uncomment the type of temperature sensor in use
-//#define DHT_TYPE    DHT11     // DHT 11
-#define DHT_TYPE      DHT22     // DHT 22 (AM2302)
-//#define DHT_TYPE    DHT21     // DHT 21 (AM2301)
+//#define DHT_TYPE    DHT11       // DHT 11
+#define DHT_TYPE      DHT22       // DHT 22 (AM2302)
+//#define DHT_TYPE    DHT21       // DHT 21 (AM2301)
+//#define DHT_TYPE    AHT10       // AHT10
+//#define DHT_TYPE    AHT20       // AHT20 
 
 // Servo degree positons - fine tune to match your servo/display
 //                     Sun  Mon  Tue  Wed  Thu  Fri  Sat
@@ -37,8 +38,5 @@ const int dayPos[8] = {180, 159, 133, 107, 80,  51,  26,  0};
 #define LCD_COLUMNS 16
 #define LCD_ROWS 2
 
-#define HISTORY_COUNT         3600    // Set to 0 to disable
+#define HISTORY_COUNT         2160    // Set to 0 to disable
 #define HISTORY_INTERVAL_SEC  60
-
-
-#endif  // DAYCLOCK_CONFIG_H

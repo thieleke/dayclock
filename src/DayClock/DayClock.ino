@@ -1,10 +1,18 @@
 /*
    Default Pinouts
- *    * Servo:  GPIO Pin 13
- *    * DHT: 5V, GND, GPIO Pin 14
- *    * LCD: 5V, GND, SDA -> I2C SDA, SCL -> IC2 SCL
+ *    * Servo:   GPIO Pin 13
+ *    * DHT:     5V, GND, GPIO Pin 14
+ *    * AHT:     5V, GND, SDA -> I2C SDA, SCL -> I2C SCL
+ *    * LCD:     5V, GND, SDA -> I2C SDA, SCL -> I2C SCL
  *    * MH-Z19B: RX -> TX2, TX -> RX2
 */
+
+// Constants that don't need to be modified
+#define NO_DH_SENSOR_TYPE 0
+#define DHT_SENSOR_TYPE   1
+#define AHT_SENSOR_TYPE   2
+#define AHT10 210
+#define AHT20 220
 
 // NOTE: See Config.h for constants that you'll definitely want to update
 #include "Config.h"
@@ -13,8 +21,6 @@
 #include <Adafruit_Sensor.h>   // https://github.com/adafruit/Adafruit_Sensor/archive/master.zip
 #include <AsyncTCP.h>          // https://github.com/me-no-dev/AsyncTCP/archive/master.zip
 #include <AsyncUDP.h>          // https://github.com/espressif/arduino-esp32/archive/master.zip
-#include <DHT.h>               // https://github.com/adafruit/DHT-sensor-library/archive/master.zip
-#include <DHT_U.h>
 #include <ESPAsyncWebServer.h> // https://github.com/me-no-dev/ESPAsyncWebServer/archive/master.zip
 #include <ESP32Servo.h>        // https://github.com/jkb-git/ESP32Servo/archive/master.zip
 #include <LiquidCrystal_I2C.h> // https://github.com/fdebrabander/Arduino-LiquidCrystal-I2C-library/archive/master.zip
@@ -24,6 +30,23 @@
 #include <WiFi.h>
 #include <Wire.h>
 #include <esp_task_wdt.h>
+
+#if DHT_TYPE == DHT11 || DHT_TYPE == DHT21 || DHT_TYPE == DHT22
+  #define DH_SENSOR_TYPE  DHT_SENSOR_TYPE
+#elif DHT_TYPE == AHT10 || DHT_TYPE == AHT20
+  #define DH_SENSOR_TYPE AHT_SENSOR_TYPE
+#else
+  #define DH_SENSOR_TYPE NO_DH_SENSOR_TYPE
+#endif
+
+#if DH_SENSOR_TYPE == DHT_SENSOR_TYPE
+  #include <DHT.h>             // https://github.com/adafruit/DHT-sensor-library/archive/master.zip
+  #include <DHT_U.h>
+  DHT_Unified dht(DHT_PIN, DHT_TYPE);
+#elif DH_SENSOR_TYPE == AHT_SENSOR_TYPE
+  #include <Adafruit_AHTX0.h>  // https://github.com/adafruit/Adafruit_AHTX0/archive/master.zip
+  Adafruit_AHTX0 aht;
+#endif
 
 #define NO_DATA_LOW -99999
 #define NO_DATA_HIGH 99999
@@ -38,9 +61,9 @@ AsyncWebServer webServer(80);
 AsyncUDP udp;
 Servo servo;
 LiquidCrystal_I2C lcd(LCD_I2C_ADDRESS, LCD_COLUMNS, LCD_ROWS);
-DHT_Unified dht(DHT_PIN, DHT_TYPE);
 MHZ19 mhz19;
 HardwareSerial mhz19Serial(MHZ19_SERIAL_PORT);
+Adafruit_Sensor *sensor_humidity, *sensor_temperature;
 
 unsigned int delayMS;
 unsigned long sensorDelayTicks = 0;
@@ -82,6 +105,8 @@ void setup()
   Serial.println();
   Serial.println(F("Booted"));
 
+  Wire.begin();
+
   //esp_task_wdt_init(5, false);
   
   log_free_memory("setup() begin");
@@ -93,9 +118,6 @@ void setup()
   // Servo initialization
   Serial.println(F("Attaching to servo"));
   servo.attach(SERVO_PIN, SERVO_MIN, SERVO_MAX);
-
-  // Initialize DHT device
-  dht.begin();
 
   // Built-in LED is used to indicate Wi-Fi connection status
   pinMode(LED_BUILTIN, OUTPUT);
@@ -129,29 +151,51 @@ void setup()
 
   servo.write(dayPos[0]);
 
+  // Initialize temperature/humidity device
+#if DH_SENSOR_TYPE == DHT_SENSOR_TYPE
+  dht.begin();
+  static DHT_Unified::Humidity _dht_humidity = dht.humidity();
+  sensor_humidity = &_dht_humidity;
+  static DHT_Unified::Temperature _dht_temperature = dht.temperature();
+  sensor_temperature = &_dht_temperature;
+#elif DH_SENSOR_TYPE == AHT_SENSOR_TYPE
+  aht.begin();
+  sensor_humidity = aht.getHumiditySensor();
+  sensor_temperature = aht.getTemperatureSensor();
+#else
+  Serial.println("No temperature/humidity sensor defined");
+  sensor_humidity = NULL;
+  sensor_temperature = NULL;
+#endif
+
   sensor_t sensor;
-  dht.temperature().getSensor(&sensor);
-  Serial.println(F("------------------------------------"));
-  Serial.println(F("Temperature Sensor"));
-  Serial.print  (F("Sensor Type: ")); Serial.println(sensor.name);
-  Serial.print  (F("Driver Ver:  ")); Serial.println(sensor.version);
-  Serial.print  (F("Unique ID:   ")); Serial.println(sensor.sensor_id);
-  Serial.print  (F("Max Value:   ")); Serial.print(sensor.max_value); Serial.println(F("°C"));
-  Serial.print  (F("Min Value:   ")); Serial.print(sensor.min_value); Serial.println(F("°C"));
-  Serial.print  (F("Resolution:  ")); Serial.print(sensor.resolution); Serial.println(F("°C"));
-  Serial.println(F("------------------------------------"));
+  if(sensor_temperature != NULL)
+  {
+    sensor_temperature->getSensor(&sensor);
+    Serial.println(F("------------------------------------"));
+    Serial.println(F("Temperature Sensor"));
+    Serial.print  (F("Sensor Type: ")); Serial.println(sensor.name);
+    Serial.print  (F("Driver Ver:  ")); Serial.println(sensor.version);
+    Serial.print  (F("Unique ID:   ")); Serial.println(sensor.sensor_id);
+    Serial.print  (F("Max Value:   ")); Serial.print(sensor.max_value); Serial.println(F("°C"));
+    Serial.print  (F("Min Value:   ")); Serial.print(sensor.min_value); Serial.println(F("°C"));
+    Serial.print  (F("Resolution:  ")); Serial.print(sensor.resolution); Serial.println(F("°C"));
+    Serial.println(F("------------------------------------"));
+  }
 
-  // Print humidity sensor details.
-  dht.humidity().getSensor(&sensor);
-  Serial.println(F("Humidity Sensor"));
-  Serial.print  (F("Sensor Type: ")); Serial.println(sensor.name);
-  Serial.print  (F("Driver Ver:  ")); Serial.println(sensor.version);
-  Serial.print  (F("Unique ID:   ")); Serial.println(sensor.sensor_id);
-  Serial.print  (F("Max Value:   ")); Serial.print(sensor.max_value); Serial.println(F("%"));
-  Serial.print  (F("Min Value:   ")); Serial.print(sensor.min_value); Serial.println(F("%"));
-  Serial.print  (F("Resolution:  ")); Serial.print(sensor.resolution); Serial.println(F("%"));
-  Serial.println(F("------------------------------------"));
-
+  if(sensor_humidity != NULL)
+  {
+    sensor_humidity->getSensor(&sensor);
+    Serial.println(F("Humidity Sensor"));
+    Serial.print  (F("Sensor Type: ")); Serial.println(sensor.name);
+    Serial.print  (F("Driver Ver:  ")); Serial.println(sensor.version);
+    Serial.print  (F("Unique ID:   ")); Serial.println(sensor.sensor_id);
+    Serial.print  (F("Max Value:   ")); Serial.print(sensor.max_value); Serial.println(F("%"));
+    Serial.print  (F("Min Value:   ")); Serial.print(sensor.min_value); Serial.println(F("%"));
+    Serial.print  (F("Resolution:  ")); Serial.print(sensor.resolution); Serial.println(F("%"));
+    Serial.println(F("------------------------------------"));
+  }
+  
   // Initialize MHZ-19B device
   mhz19Serial.begin(MHZ19_BAUDRATE);
   mhz19.begin(mhz19Serial);
@@ -332,90 +376,96 @@ void update_sensors()
   Serial.print(F("    Max CO2: "));
   Serial.println(maxCO2);
   */
+
+  noTemp = true;
+  if(sensor_temperature != NULL)
+  {  
+    sensor_temperature->getEvent(&event);
+    t = event.temperature;
+    yield();  
+    Serial.printf("    T: %0.2f C / %0.2f F\n", t, c_to_f(t));
   
-  // Get temperature event and print its value
-  dht.temperature().getEvent(&event);
-  t = event.temperature;
-  yield();  
-  Serial.printf("    T: %0.2f C / %0.2f F\n", t, c_to_f(t));
-
-  noTemp = isnan(t) || t < -40 || t > 125;
-  if (noTemp)
-  {
-    Serial.println(F("    Error reading temperature!"));   
-    lcd_print(F("Error reading temperature"), 0);
-  }
-  else
-  {
-#ifdef DISPLAY_CELSIUS
-    const char c_or_f = 'C';
-#else
-    const char c_or_f = 'F';
-#endif
-
-    lastTemperature = t;
-    minTemp = min(minTemp, t);
-    maxTemp = max(maxTemp, t);
-    String msg;
-    if (!showMinMax)
+    noTemp = isnan(t) || t < -40 || t > 125;
+    if (noTemp)
     {
-      msg = "T: " + String(convert_temp(t)) + c_or_f + "  CO2:  ";
+      Serial.println(F("    Error reading temperature!"));   
+      lcd_print(F("Error reading temperature"), 0);
     }
     else
     {
-      if (showTempMinMax)
+  #ifdef DISPLAY_CELSIUS
+      const char c_or_f = 'C';
+  #else
+      const char c_or_f = 'F';
+  #endif
+  
+      lastTemperature = t;
+      minTemp = min(minTemp, t);
+      maxTemp = max(maxTemp, t);
+      String msg;
+      if (!showMinMax)
       {
-        msg = String(convert_temp(minTemp)) + c_or_f + " / " + String(convert_temp(maxTemp)) + c_or_f + "          ";
+        msg = "T: " + String(convert_temp(t)) + c_or_f + "  CO2:  ";
       }
       else
       {
-        msg = String("CO2 Min: " + String(minCO2) + "                  ");
+        if (showTempMinMax)
+        {
+          msg = String(convert_temp(minTemp)) + c_or_f + " / " + String(convert_temp(maxTemp)) + c_or_f + "          ";
+        }
+        else
+        {
+          msg = String("CO2 Min: " + String(minCO2) + "                  ");
+        }
       }
+  
+      lcd_print(msg, 0);
     }
-
-    lcd_print(msg, 0);
   }
 
-  // Get humidity event and print its value.
-  dht.humidity().getEvent(&event);
-  h = event.relative_humidity;
-  yield();
-  Serial.printf("    H: %0.2f%%\n", h);
-
-  noHumidity = isnan(h) || h < 0 || h > 100;
-  if (noHumidity)
+  noHumidity = true;
+  if(sensor_humidity != NULL)
   {
-    Serial.println(F("    Error reading humidity"));
-    lcd_print(F("Error reading humidity"), 0);
-  }
-  else
-  {
-    lastHumidity = h;
-    minHumidity = min(minHumidity, h);
-    maxHumidity = max(maxHumidity, h);
-
-    String msg;
-    if (!showMinMax)
+    sensor_humidity->getEvent(&event);
+    h = event.relative_humidity;
+    yield();
+    Serial.printf("    H: %0.2f%%\n", h);
+  
+    noHumidity = isnan(h) || h < 0 || h > 100;
+    if (noHumidity)
     {
-      msg = "H: " + String(h) + "%  " + String(CO2) + "      ";
+      Serial.println(F("    Error reading humidity"));
+      lcd_print(F("Error reading humidity"), 0);
     }
     else
     {
-      if (showTempMinMax)
+      lastHumidity = h;
+      minHumidity = min(minHumidity, h);
+      maxHumidity = max(maxHumidity, h);
+  
+      String msg;
+      if (!showMinMax)
       {
-        msg = String(minHumidity) + "% / " + String(maxHumidity) + "%            ";
+        msg = "H: " + String(h) + "%  " + String(CO2) + "      ";
       }
       else
       {
-        msg = String("CO2 Max: " + String(maxCO2) + "                   ");
+        if (showTempMinMax)
+        {
+          msg = String(minHumidity) + "% / " + String(maxHumidity) + "%            ";
+        }
+        else
+        {
+          msg = String("CO2 Max: " + String(maxCO2) + "                   ");
+        }
+  
+        showTempMinMax = !showTempMinMax;
       }
-
-      showTempMinMax = !showTempMinMax;
+  
+      lcd_print(msg, 1);
     }
-
-    lcd_print(msg, 1);
   }
-
+  
   delay(10);
   
   // Ignore errored sensor readings and try later
