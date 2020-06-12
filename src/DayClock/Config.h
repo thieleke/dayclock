@@ -1,13 +1,15 @@
 #pragma once
 
-//#define DISPLAY_CELSIUS                         // Uncomment if you want the LCD and HTTP displays to default to Celsius temperature instead of Fahrenheit
-#define UDP_HOST_IP            192,168,0,1        // IP address, comma separated (eg: 192,168,0,1), if you want to receive UDP push messages.
-#define UDP_HOST_PORT          1234               // UDP port
-const char *ssid               = "YOUR_SSID";     // Your WiFi SSID
-const char *password           = "PASSWORD";      // Your WiFi password
-const char* ntpServer          = "pool.ntp.org";  // There are also region-specific addresses such as "us.pool.ntp.org"
-const long  gmtOffset_sec      = -21600;          // Non-daylight saving time offset from UTC, in seconds (-18000 = US Eastern Standard Time, -21600 = US Central Standard Time, etc.)
-const int   daylightOffset_sec = 3600;            // Number of seconds offset for daylight saving time (0 if daylight savings time if not applicable)
+//#define DISPLAY_CELSIUS                                   // Uncomment if you want the LCD and HTTP displays to default to Celsius temperature instead of Fahrenheit
+#define UDP_HOST_IP              192,168,0,1                // IP address, comma separated (eg: 192,168,0,1), if you want to receive UDP push messages.
+#define UDP_HOST_PORT            1234                       // UDP port
+const char *ssid                 = "YOUR_SSID";             // Your WiFi SSID
+const char *password             = "PASSWORD";              // Your WiFi password
+const char *ntpServer            = "ntp.pool.org";          // There are also region-specific addresses such as "us.pool.ntp.org"
+const long  gmtOffset_sec        = -21600;                  // Non-daylight saving time offset from UTC, in seconds (-18000 = US Eastern Standard Time, -21600 = US Central Standard Time, etc.)
+const int   daylightOffset_sec   = 3600;                    // Number of seconds offset for daylight saving time (0 if daylight savings time if not applicable)
+const char *basicAuthString      = "";                      // If non-empty, require HTTP Basic Authentication for HTTP endpoints.  Format is username:password (Base64 encoded)
+const char *basicAuthAdminString = "YWRtaW46cEBzc3dvcmQ=";  // Admin username + password, Base64 encoded (admin:p@ssword = YWRtaW46cEBzc3dvcmQ=)
 
 #define SERVO_PIN  13
 #define DHT_PIN    14

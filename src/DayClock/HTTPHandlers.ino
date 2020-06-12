@@ -23,6 +23,14 @@ void httpRootHandler(AsyncWebServerRequest *request)
 {
   log_start_request(request, "/");
 
+  AsyncWebServerResponse *response = authenticationCheck(request);
+  if(response != NULL)
+  {
+    request->send(response);
+    log_end_request("/ (missing authentication)");
+    return;
+  }
+
   static const char *html = R"(
 <html>
    <head>
@@ -113,7 +121,7 @@ void httpRootHandler(AsyncWebServerRequest *request)
                                        chartHTML,                                      // Chart HTML link
                                        c_to_f(lastTemperature), lastTemperature, lastHumidity, lastCO2, lastSensorLocaltime);
 
-  AsyncWebServerResponse *response = request->beginResponse(200, "text/html", buf);
+  response = request->beginResponse(200, "text/html", buf);
   response->addHeader("Cache-Control", "no-cache");
   request->send(response);
   
@@ -124,10 +132,18 @@ void httpXMLHandler(AsyncWebServerRequest *request)
 {
   log_start_request(request, "/xml");
 
+  AsyncWebServerResponse *response = authenticationCheck(request);
+  if(response != NULL)
+  {
+    request->send(response);
+    log_end_request("/xml (missing authentication)");
+    return;
+  }
+
   char buf[1024];
   to_xml(lastTemperature, lastHumidity, lastCO2, lastSensorTimestamp, buf, sizeof(buf));
 
-  AsyncWebServerResponse *response = request->beginResponse(200, "application/xml", buf);
+  response = request->beginResponse(200, "application/xml", buf);
   response->addHeader("Cache-Control", "no-cache");
   request->send(response);
     
@@ -138,10 +154,18 @@ void httpJSONHandler(AsyncWebServerRequest *request)
 {
   log_start_request(request, "/json");
 
+  AsyncWebServerResponse *response = authenticationCheck(request);
+  if(response != NULL)
+  {
+    request->send(response);
+    log_end_request("/json (missing authentication)");
+    return;
+  }
+
   char buf[1024];
   to_json(lastTemperature, lastHumidity, lastCO2, lastSensorTimestamp, buf, sizeof(buf));
 
-  AsyncWebServerResponse *response = request->beginResponse(200, "application/json", buf);
+  response = request->beginResponse(200, "application/json", buf);
   response->addHeader("Cache-Control", "no-cache");
   request->send(response);
 
@@ -152,6 +176,14 @@ void httpJSONHandler(AsyncWebServerRequest *request)
 void httpChartHandler(AsyncWebServerRequest *request)
 {
   log_start_request(request, "/chart");
+
+  AsyncWebServerResponse *response = authenticationCheck(request);
+  if(response != NULL)
+  {
+    request->send(response);
+    log_end_request("/chart (missing authentication)");
+    return;
+  }
 
   static const char *html = R"(
 <html>
@@ -389,7 +421,7 @@ void httpChartHandler(AsyncWebServerRequest *request)
   char buf[10000];
   snprintf(buf, sizeof(buf) - 1, html, tempIndex, tempIndex, tempUnit, tempUnit, tempUnit);
   
-  AsyncWebServerResponse *response = request->beginResponse(200, "text/html", buf);
+  response = request->beginResponse(200, "text/html", buf);
   response->addHeader("Cache-Control", "no-cache");
   request->send(response);
   
@@ -435,6 +467,14 @@ void httpHistoryHandler(AsyncWebServerRequest *request)
   log_free_memory("httpHistoryHandler() start");
   log_start_request(request, "/history");
 
+  AsyncWebServerResponse *response = authenticationCheck(request);
+  if(response != NULL)
+  {
+    request->send(response);
+    log_end_request("/history (missing authentication)");
+    return;
+  }
+
   if(!setHistoryBusy(true))
   {
     Serial.println("httpHistoryHandler - busy");
@@ -464,7 +504,7 @@ void httpHistoryHandler(AsyncWebServerRequest *request)
   _historyPos = minPos;
   _historyDone = false;
 
-  AsyncWebServerResponse *response = request->beginChunkedResponse("application/json", get_history_data_callback);
+  response = request->beginChunkedResponse("application/json", get_history_data_callback);
   response->addHeader("Cache-Control", "no-cache");
   request->send(response);
 
@@ -525,13 +565,32 @@ size_t get_history_data_callback(uint8_t *buffer, size_t maxLen, size_t index)
 }
 #endif
 
+static char csrf_token[32];
 void httpUpdateHandler(AsyncWebServerRequest *request)
 {
   log_start_request(request, "/update");
+
+  AsyncWebServerResponse *response = authenticationAdminCheck(request);
+  if(response != NULL)
+  {
+    request->send(response);
+    log_end_request("/update (missing authentication)");
+  }
+
+  srand(millis());
+  for(int i=0; i<32; i++)
+  {
+    csrf_token[i] = 'A' + (rand() % 26);
+  }
+  csrf_token[31] = '\0';
+  
+  char cookie[128];
+  snprintf(cookie, sizeof(cookie), "CSRF_TOKEN=%s; HttpOnly; Max-Age=300; SameSite=Strict", csrf_token);
   
   const char *html = "<html><head><title>Firmware Update</title></head><body><form method='POST' action='/do_update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form></body></html>";
-  AsyncWebServerResponse *response = request->beginResponse(200, "text/html", html);
+  response = request->beginResponse(200, "text/html", html);
   response->addHeader("Cache-Control", "no-cache");
+  response->addHeader("Set-Cookie", cookie);
   request->send(response);
 
   log_end_request("/update");
@@ -540,7 +599,24 @@ void httpUpdateHandler(AsyncWebServerRequest *request)
 void httpDoUpdateHandler(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) 
 {
   log_start_request(request, "/do_update");
+
+  if(request->hasHeader("Cookie") == false)
+  {
+    log_end_request("/do_update (missing CSRF_TOKEN cookie)");
+    request->send(400);
+    return;
+  }
   
+  AsyncWebHeader *cookie = request->getHeader("Cookie");
+  char expectedCookie[64];
+  snprintf(expectedCookie, sizeof(expectedCookie), "CSRF_TOKEN=%s", csrf_token);  
+  if(cookie->value() != expectedCookie)
+  {
+    log_end_request("/do_update (invalid CSRF_TOKEN cookie)");
+    request->send(400);
+    return;    
+  }
+    
   if (!index)
   {
     Serial.println("Update Starting");
@@ -622,6 +698,56 @@ void update_print_progress(size_t prg, size_t sz)
   int progress = (prg * 100) / updateContentLen;
   Serial.printf("Progress: %d%%\n", progress);
   servo.write(mapping[progress]);
+}
+
+void httpResetHandler(AsyncWebServerRequest *request)
+{
+  log_start_request(request, "/reset");
+
+  AsyncWebServerResponse *response = authenticationAdminCheck(request);
+  if(response != NULL)
+  {
+    request->send(response);
+    log_end_request("/reset (missing authentication)");
+  }
+
+  ESP.restart();
+}
+
+AsyncWebServerResponse* authenticationCheck(AsyncWebServerRequest *request)
+{
+  return(authenticationCheck(request, false));
+}
+
+AsyncWebServerResponse* authenticationAdminCheck(AsyncWebServerRequest *request)
+{
+  return(authenticationCheck(request, true));
+}
+
+AsyncWebServerResponse* authenticationCheck(AsyncWebServerRequest *request, bool admin)
+{
+  const char *authString = admin == true ? basicAuthAdminString : basicAuthString;
+  const char *realm      = admin == true ? "DayClock Admin" : "DayClock";
+  
+  // If the authentication string isn't set or is empty, skip
+  if(authString == NULL || strcmp(authString, "") == 0)
+    return NULL;
+
+  if(request->hasHeader("Authorization"))
+  {    
+    if(request->header("Authorization") == String("Basic ") + authString)
+    {
+      Serial.println("Authentication valid");
+      return NULL;
+    }
+
+    Serial.printf("Authentication '%s' is invalid (authString = %s)\n", request->header("Authorization").c_str(), authString);
+  }
+
+  // Return the 401 response
+  AsyncWebServerResponse *response = request->beginResponse(401);
+  response->addHeader("WWW-Authenticate", "Basic realm=\"" + String(realm) + "\"");
+  return response;
 }
 
 void httpFaviconHandler(AsyncWebServerRequest *request)
@@ -791,4 +917,4 @@ void httpChartIconHandler(AsyncWebServerRequest *request)
 
   log_end_request("/chart.png");
 }
-#endif
+#endif  // HISTORY_COUNT

@@ -159,7 +159,10 @@ void setup()
   static DHT_Unified::Temperature _dht_temperature = dht.temperature();
   sensor_temperature = &_dht_temperature;
 #elif DH_SENSOR_TYPE == AHT_SENSOR_TYPE
-  aht.begin();
+  if(!aht.begin())
+  {
+    Serial.println("Unable to connect to AHT20");
+  }
   sensor_humidity = aht.getHumiditySensor();
   sensor_temperature = aht.getTemperatureSensor();
 #else
@@ -252,6 +255,7 @@ void setup()
   webServer.on("/do_update",   HTTP_POST, [](AsyncWebServerRequest * request) {},
                                           [](AsyncWebServerRequest * request, const String & filename, size_t index, uint8_t *data, size_t len, bool final) {
                                                httpDoUpdateHandler(request, filename, index, data, len, final); });
+  webServer.on("/reset",       HTTP_GET,  httpResetHandler);
 
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
   webServer.begin();
