@@ -9,7 +9,7 @@ This is mixup of https://github.com/phreakmonkey/DayClock 's 3D printed pointer 
 Parts needed for this design:
 
 * ESP32 (ESP8266 should work, but is untested).
-* DHT11 or DHT22 (preferred) temperature/humidity sensor.  Lots of these online - AdaFruit sells the sensor and a resistor, but you might prefer an integrated package with the circuit board and resistor built in.  Search on eBay, etc.  Expect to spend no more than $10 and probably much less.
+* DHT11, DHT22, or AHT20 (preferred) temperature/humidity sensor.  Lots of these online - AdaFruit sells the DHT sensors and a resistor, but you might prefer an integrated package with the circuit board and resistor built in.  Search on eBay, etc.  Expect to spend no more than $10 and probably much less.  AHT20 is available at both AdaFruit and SparkFun.
 * MHZ-19B CO2 sensor.  These are all over eBay and the usual sources.  Look around and don't spend more than around $25 for a nicely packaged version.
 * LCD panel with I2C interface.  These are typically 1602a type devices and should cost a few dollars or so on the usual places.  The code defaults to a 16x2 display - larger displays might work but YMMV.  There are plenty of 3D designs available to hold these LCD screens - I used and liked https://www.thingiverse.com/make:440729
 * 3D printed versions of phreakmonkey's https://github.com/phreakmonkey/DayClock/blob/master/DayClock.stl and https://github.com/phreakmonkey/DayClock/blob/master/DayClock-hand.stl
@@ -37,6 +37,7 @@ Software / Libraries used (and much thanks given!):
 * https://github.com/adafruit/Adafruit_Sensor
 * https://github.com/espressif/arduino-esp32
 * https://github.com/adafruit/DHT-sensor-library
+* https://github.com/adafruit/Adafruit_AHTX0
 * https://github.com/jkb-git/ESP32Servo
 * https://github.com/fdebrabander/Arduino-LiquidCrystal-I2C-library
 * https://github.com/WifWaf/MH-Z19
