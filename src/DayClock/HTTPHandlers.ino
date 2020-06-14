@@ -575,6 +575,7 @@ void httpUpdateHandler(AsyncWebServerRequest *request)
   {
     request->send(response);
     log_end_request("/update (missing authentication)");
+    return;
   }
 
   srand(millis());
@@ -709,6 +710,7 @@ void httpResetHandler(AsyncWebServerRequest *request)
   {
     request->send(response);
     log_end_request("/reset (missing authentication)");
+    return;
   }
 
   ESP.restart();
