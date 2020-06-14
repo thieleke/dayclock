@@ -617,7 +617,7 @@ void httpDoUpdateHandler(AsyncWebServerRequest *request, const String& filename,
     request->send(400);
     return;    
   }
-    
+  
   if (!index)
   {
     Serial.println("Update Starting");
@@ -713,6 +713,10 @@ void httpResetHandler(AsyncWebServerRequest *request)
     return;
   }
 
+  const char *html = "<html><head><meta http-equiv='refresh' content='10; url=/'><title>Rebooting</title></head><body>Rebooting...</body></html>";
+  request->send(200, "text/html", html);
+  delay(1000);
+  
   ESP.restart();
 }
 
