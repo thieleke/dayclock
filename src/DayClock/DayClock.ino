@@ -202,7 +202,7 @@ void setup()
   // Initialize MHZ-19B device
   mhz19Serial.begin(MHZ19_BAUDRATE);
   mhz19.begin(mhz19Serial);
-  mhz19.autoCalibration();
+  mhz19.autoCalibration(false);
 
   // Set delay between sensor readings based on sensor details
   delayMS = 5000; //(sensor.min_delay / 1000) * 2;
@@ -256,6 +256,7 @@ void setup()
                                           [](AsyncWebServerRequest * request, const String & filename, size_t index, uint8_t *data, size_t len, bool final) {
                                                httpDoUpdateHandler(request, filename, index, data, len, final); });
   webServer.on("/reset",       HTTP_GET,  httpResetHandler);
+  webServer.on("/calibrate",   HTTP_GET,  httpCalibrateHandler);
 
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
   webServer.begin();

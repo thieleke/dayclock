@@ -720,6 +720,18 @@ void httpResetHandler(AsyncWebServerRequest *request)
   ESP.restart();
 }
 
+void httpCalibrateHandler(AsyncWebServerRequest *request)
+{
+  log_start_request(request, "/calibrate");
+
+  mhz19.calibrate();
+  const char *html = "<html><head><meta http-equiv='refresh' content='5; url=/'><title>Calibrating</title></head><body>Starting calibration...</body></html>";
+  request->send(200, "text/html", html);
+  
+  log_end_request("/calibrate");
+}
+
+
 AsyncWebServerResponse* authenticationCheck(AsyncWebServerRequest *request)
 {
   return(authenticationCheck(request, false));
