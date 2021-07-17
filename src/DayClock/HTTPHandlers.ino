@@ -724,12 +724,44 @@ void httpCalibrateHandler(AsyncWebServerRequest *request)
 {
   log_start_request(request, "/calibrate");
 
+  AsyncWebServerResponse *response = authenticationAdminCheck(request);
+  if(response != NULL)
+  {
+    request->send(response);
+    log_end_request("/calibrate (missing authentication)");
+    return;
+  }
+  
   mhz19.calibrate();
   const char *html = "<html><head><meta http-equiv='refresh' content='5; url=/'><title>Calibrating</title></head><body>Starting calibration...</body></html>";
   request->send(200, "text/html", html);
   
   log_end_request("/calibrate");
 }
+
+void httpAutoCalibrateHandler(AsyncWebServerRequest *request)
+{
+  log_start_request(request, "/auto_calibrate");
+
+  AsyncWebServerResponse *response = authenticationAdminCheck(request);
+  if(response != NULL)
+  {
+    request->send(response);
+    log_end_request("/auto_calibrate (missing authentication)");
+    return;
+  }
+
+  bool new_abcStatus = mhz19.getABC() ? false : true;
+  mhz19.autoCalibration(new_abcStatus);
+  char buf[160];
+  const char *msg =  mhz19.getABC() ? "Enabled" : "Disabled";
+  snprintf(buf, sizeof(buf) - 1, 
+           "<html><head><meta http-equiv='refresh' content='5; url=/'><title>Auto Calibrate %s</title></head><body>Auto Calibrate %s</body></html>", msg, msg);
+  request->send(200, "text/html", buf);
+  
+  log_end_request("/auto_calibrate");
+}
+
 
 
 AsyncWebServerResponse* authenticationCheck(AsyncWebServerRequest *request)

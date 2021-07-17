@@ -202,7 +202,7 @@ void setup()
   // Initialize MHZ-19B device
   mhz19Serial.begin(MHZ19_BAUDRATE);
   mhz19.begin(mhz19Serial);
-  mhz19.autoCalibration(false);
+  mhz19.autoCalibration(true);
 
   // Set delay between sensor readings based on sensor details
   delayMS = 5000; //(sensor.min_delay / 1000) * 2;
@@ -242,21 +242,22 @@ void setup()
 
   log_free_memory("setup() before webServer");
   
-  webServer.on("/",            HTTP_GET,  httpRootHandler);
-  webServer.on("/xml",         HTTP_GET,  httpXMLHandler);
-  webServer.on("/json",        HTTP_GET,  httpJSONHandler);
-  webServer.on("/favicon.ico", HTTP_GET,  httpFaviconHandler);
+  webServer.on("/",               HTTP_GET,  httpRootHandler);
+  webServer.on("/xml",            HTTP_GET,  httpXMLHandler);
+  webServer.on("/json",           HTTP_GET,  httpJSONHandler);
+  webServer.on("/favicon.ico",    HTTP_GET,  httpFaviconHandler);
 #if HISTORY_COUNT
-  webServer.on("/chart",       HTTP_GET,  httpChartHandler);
-  webServer.on("/history",     HTTP_GET,  httpHistoryHandler);
-  webServer.on("/chart.png",   HTTP_GET,  httpChartIconHandler);
+  webServer.on("/chart",          HTTP_GET,  httpChartHandler);
+  webServer.on("/history",        HTTP_GET,  httpHistoryHandler);
+  webServer.on("/chart.png",      HTTP_GET,  httpChartIconHandler);
 #endif
-  webServer.on("/update",      HTTP_GET,  httpUpdateHandler);
-  webServer.on("/do_update",   HTTP_POST, [](AsyncWebServerRequest * request) {},
-                                          [](AsyncWebServerRequest * request, const String & filename, size_t index, uint8_t *data, size_t len, bool final) {
-                                               httpDoUpdateHandler(request, filename, index, data, len, final); });
-  webServer.on("/reset",       HTTP_GET,  httpResetHandler);
-  webServer.on("/calibrate",   HTTP_GET,  httpCalibrateHandler);
+  webServer.on("/update",         HTTP_GET,  httpUpdateHandler);
+  webServer.on("/do_update",      HTTP_POST, [](AsyncWebServerRequest * request) {},
+                                             [](AsyncWebServerRequest * request, const String & filename, size_t index, uint8_t *data, size_t len, bool final) {
+                                                    httpDoUpdateHandler(request, filename, index, data, len, final); });
+  webServer.on("/reset",          HTTP_GET,  httpResetHandler);
+  webServer.on("/calibrate",      HTTP_GET,  httpCalibrateHandler);
+  webServer.on("/auto_calibrate", HTTP_GET,  httpAutoCalibrateHandler);
 
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
   webServer.begin();
